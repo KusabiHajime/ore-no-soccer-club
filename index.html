@@ -656,6 +656,8 @@ body.running .dock .btn.on{background:var(--club);color:var(--club-ink);border-c
 .mopt{display:flex;flex-direction:column;gap:2px;text-align:left;width:100%;border:1px solid var(--line);background:var(--surface2);border-radius:12px;padding:10px 12px;box-shadow:inset 0 -2px 0 rgba(0,0,0,.06)}
 .mopt b{font-size:14px}.mopt span{font-size:12px;color:var(--muted)}
 .mopt:active{transform:translateY(1px)}
+.optbox{border:1px solid var(--line);border-radius:10px;padding:8px 10px;background:var(--surface2);display:flex;flex-direction:column;gap:2px}
+.chip[disabled]{opacity:.45}
 .mopts2{display:grid;grid-template-columns:1fr 1fr;gap:6px}
 .mopt.sm{padding:8px 10px;border-radius:10px}.mopt.sm b{font-size:13px;line-height:1.35}.mopt.sm span{font-size:11px;line-height:1.4}
 #mpanel{max-height:62vh;overflow-y:auto}
@@ -2455,6 +2457,7 @@ function finalizeSeason(){
  if(mv.up[S.me])addNews(mv.up[S.me]+'昇格が決まりました！',1);
  else if(mv.down[S.me])addNews(fate+'が決まりました',1);
  S.seasonDone=rec;
+ optSeasonEnd();
  if(!S.over)S.meet={k:'end',d:S.day};
 }
 function acleResult(){var A=S.cups.acle;if(A.fin&&A.fin[0]&&(A.fin[0].a===S.me||A.fin[0].b===S.me))return '準優勝';if(A.sf&&A.sf.some(function(p){return p.a===S.me||p.b===S.me;}))return 'ベスト4';if(A.qf&&A.qf.some(function(p){return p.a===S.me||p.b===S.me;}))return 'ベスト8';if(A.r16&&A.r16.some(function(p){return p.a===S.me||p.b===S.me;}))return 'ベスト16';if(A.east.indexOf(S.me)>=0)return 'リーグステージ敗退';return 'プレーオフ敗退';}
@@ -3042,9 +3045,66 @@ function loanBuyers(p){
  var o=ovr(p),mc=myClub();
  return Object.keys(S.clubs).map(function(id){return S.clubs[id];}).filter(function(c){return c.id!==S.me&&!c.corp&&c.pl.length<35&&tierIdx(c)>=tierIdx(mc)-1&&o>=clubLevel(c)-8&&o<=clubLevel(c)+6;});
 }
-function doLoanOut(p,to,share){
+function doLoanOut(p,to,share,opt){
  leaveClub(p);p.club=to.id;to.pl.push(p.id);p.loan={from:S.me,share:share};p.list=0;markMoved(p);
- addNews(pname(p)+'を'+to.short+'へ期限付き移籍（年俸の'+Math.round(share*100)+'%を先方が負担）',1);
+ if(opt)p.loan.opt={price:opt.price,fee:opt.fee,y:S.year};
+ addNews(pname(p)+'を'+to.short+'へ期限付き移籍（年俸の'+Math.round(share*100)+'%を先方が負担'+(opt?'・買取オプション付き、レンタル料'+money(opt.fee):'')+'）',1);
+}
+/* ---------- 買取オプション付きのレンタル ----------
+ * 実際の移籍市場にならい、買取額は契約時に決めて固定し、レンタル料は買取額の1割を契約時に払う（戻らない）。
+ * 貸す側にとって出番の少ない選手なので、買取額は完全移籍の目安より安め（放出リストの選手はさらに安い）。
+ * 伸びしろの大きい若手は高めになり、将来の主力候補として育てている選手にはオプションを付けてくれない。
+ * 行使するかどうかはシーズン終了後〜6月29日に決める。行使すると、今の年俸のまま完全移籍に切り替わる */
+function optTerms(p){
+ var c=p.club&&S.clubs[p.club];if(!c||c.id===S.me)return null;
+ var o=ovr(p),up=p.pot-o;
+ if(!p.list&&p.age<=21&&up>=12&&p.pot>=clubLevel(c)+4)return {no:1};
+ var ask=askFee(p),m=p.list?.8:p.age<=23&&up>=8?1.05:.9;
+ var price=Math.max(50,Math.round(ask*m/10)*10);
+ return {price:price,fee:Math.max(10,Math.round(price*.1/10)*10),ask:ask,yrs:p.age<=26?3:2,why:p.list?'放出リストに載っている選手のため、買取額は安めです。':m>1?'伸びしろのある若手のため、買取額は高めに設定されています。':'出番の少ない選手のため、買取額は目安より少し安めです。'};
+}
+function optOf(p){return p&&p.loan&&p.loan.from!==S.me&&p.club===S.me?p.loan.opt||null:null;}
+function optExercise(pid){
+ var p=S.P[pid],o=optOf(p);if(!o)return {ok:false,msg:'買取オプションの付いた選手ではありません'};
+ if(!S.seasonDone)return {ok:false,msg:'買取オプションはシーズン終了後に行使できます'};
+ if(refusesRenew(p))return {ok:false,msg:pname(p)+'は完全移籍を望んでいません（クラブへの愛着が低すぎます）'};
+ if(S.fin.cash<o.price)return {ok:false,msg:'資金が足りません（買取額 '+money(o.price)+'）'};
+ var add=p.sal*(1-p.loan.share);if(add>0&&!budgetOK(add))return {ok:false,msg:'完全移籍で年俸が全額こちらの負担になり、人件費の上限を超えます（増える額 '+money(add)+'・残り'+money(budgetRoom())+'）'};
+ var from=S.clubs[p.loan.from];
+ ledger('exp','trans',o.price);if(from)from.money=(from.money||0)+o.price;
+ p.loan=null;p.yrs=(o.yrs||2)+1;p.renewed=1;p.att=clamp(attOf(p)+6,0,100);
+ S.inbox.forEach(function(m){if(m.kind==='opt'&&m.pid===pid&&!m.done)m.done='買い取った';});
+ addNews(pname(p)+'の買取オプションを行使。'+(from?from.short+'から':'')+'完全移籍で加入（移籍金'+money(o.price)+'・'+(o.yrs||2)+'年契約）',1);
+ return {ok:true,msg:pname(p)+'の完全移籍が決まりました（'+money(o.price)+'）'};
+}
+function respondOpt(mid,yes){
+ var m=S.inbox.filter(function(x){return x.id===mid;})[0];if(!m||m.done)return {ok:false,msg:'すでに返事をしています'};
+ if(yes)return optExercise(m.pid);
+ var p=S.P[m.pid];m.done='見送った';
+ if(p)addNews(pname(p)+'の買取オプションを見送りました。6月末でレンタル元へ戻ります');
+ return {ok:true,msg:'買取オプションを見送りました'};
+}
+/* シーズン終了時：買取オプションの付いたレンタル選手について、行使するかの判断を求める。
+ * 貸し出した選手については、受け入れ先がこの時点で行使するかを決めて知らせてくる（移籍は6月30日） */
+function optSeasonEnd(){
+ loanedOut().forEach(function(p){
+  var o=p.loan.opt;if(!o||o.ai!=null)return;var to=S.clubs[p.club];
+  o.ai=aiOptDecide(p)?1:0;
+  inbox({type:'info',title:pname(p)+'の買取オプション（'+(to?to.short:'')+'）',body:o.ai?(to?to.name:'受け入れ先')+'が買取オプションを行使します。6月30日に完全移籍となり、移籍金'+money(o.price)+'が入ります。':(to?to.name:'受け入れ先')+'は買取オプションを行使しませんでした。6月30日にレンタル期間を終えて戻ってきます。'});
+ });
+ roster(myClub()).forEach(function(p){
+  var o=optOf(p);if(!o)return;var from=S.clubs[p.loan.from];
+  inbox({type:'offer',kind:'opt',pid:p.id,exp:renewDeadline(),title:pname(p)+'の買取オプション'+(from?'（'+from.short+'）':''),
+   body:'今季はリーグ戦'+p.st.ap+'試合・'+p.st.g+'得点。買取額は'+money(o.price)+'（いまの市場価値 '+money(valueOf(p))+'）。買い取ると'+(o.yrs||2)+'年契約・年俸'+money(p.sal)+'で完全移籍になります。見送ると6月末にレンタル元へ戻ります。'});
+ });
+}
+/* 貸し出した選手の買取オプション：受け入れ先は、出番を得て通用した選手ほど行使する（6月30日） */
+function aiOptDecide(p){
+ var to=S.clubs[p.club],o=p.loan&&p.loan.opt;if(!to||!o)return false;
+ if((to.money||0)<o.price)return false;
+ var use=(p.st.ap+p.st.cap)/Math.max(1,to.mp),fit=ovr(p)-clubLevel(to);
+ var pr=use>.5&&fit>=-3?.8:use>.3&&fit>=-5?.45:use>.15?.15:.03;
+ return rnd()<pr;
 }
 /* 自クラブ選手への獲得オファー（移籍期間中） */
 function offersForMine(){
@@ -3055,8 +3115,9 @@ function offersForMine(){
   if(p.loanList){
    if(rnd()>.09)return;
    var lb=loanBuyers(p);if(!lb.length)return;
-   var to=pick(lb),sh=loanShareFor(p,to);
-   inbox({type:'offer',kind:'loan',pid:p.id,buyer:to.id,share:sh,exp:S.day+10,title:to.short+'から'+pname(p)+'へのレンタル移籍の打診',body:TIERNAME[to.tier]+'の'+to.name+'が、今季終了までの期限付き移籍を希望しています。年俸の'+Math.round(sh*100)+'%を先方が負担（'+fmtD(S.day+10)+'まで）'});
+   var to=pick(lb),sh=loanShareFor(p,to),op=null;
+   if(rnd()<.35&&!p.youth){var pr2=Math.max(50,Math.round(valueOf(p)*(.85+.3*rnd())/10)*10);if((to.money||0)>=pr2*1.2)op={price:pr2,fee:Math.max(10,Math.round(pr2*.1/10)*10)};}
+   inbox({type:'offer',kind:'loan',pid:p.id,buyer:to.id,share:sh,opt:op,exp:S.day+10,title:to.short+'から'+pname(p)+'へのレンタル移籍の打診'+(op?'（買取オプション付き）':''),body:TIERNAME[to.tier]+'の'+to.name+'が、今季終了までの期限付き移籍を希望しています。年俸の'+Math.round(sh*100)+'%を先方が負担'+(op?'。買取オプション付きで、レンタル料'+money(op.fee)+'を支払い、シーズン後に'+money(op.price)+'で買い取れる条件を求めています':'')+'（'+fmtD(S.day+10)+'まで）'});
    return;
   }
   var o=ovr(p),rel=o-myLevel();
@@ -3075,7 +3136,7 @@ function respondOffer(mid,accept){
  var p=S.P[m.pid],b=S.clubs[m.buyer];
  if(!p||p.club!==S.me){m.done='無効';return {ok:false,msg:'その選手はもう在籍していません'};}
  if(!S.window){m.done='無効';return {ok:false,msg:'移籍期間が終わっています'};}
- if(m.kind==='loan'){doLoanOut(p,b,m.share);m.done='受け入れた';return {ok:true,msg:pname(p)+'が'+b.short+'へレンタル移籍します（今季終了まで）'};}
+ if(m.kind==='loan'){if(m.opt){ledger('rev','trans',m.opt.fee);b.money=(b.money||0)-m.opt.fee;}doLoanOut(p,b,m.share,m.opt);m.done='受け入れた';return {ok:true,msg:pname(p)+'が'+b.short+'へレンタル移籍します（今季終了まで'+(m.opt?'・レンタル料'+money(m.opt.fee)+'を受け取りました':'')+'）'};}
  ledger('rev','trans',m.fee);b.money=(b.money||0)-m.fee;leaveClub(p);joinClub(p,b,ri(2,4));p.list=0;markMoved(p);
  m.done='受け入れた';
  addNews(pname(p)+'が'+b.short+'へ完全移籍（移籍金'+money(m.fee)+'）',1);
@@ -3262,8 +3323,10 @@ function aiCoachChange(){
 /* ---------- 契約満了・加齢・引退・AIの補強 ---------- */
 function contractsExpire(){
  var mc=myClub(),leaving=[];
+ S.inbox.forEach(function(m){if(m.kind==='opt'&&!m.done)m.done='期限切れ（行使せず）';});
  for(var id in S.P){
   var p=S.P[id];if(p.ghost||p.prospect)continue;
+  if(p.loan&&p.loan.opt&&p.loan.from===S.me&&p.loan.opt.ai&&S.clubs[p.club]){var bt=S.clubs[p.club],opr=p.loan.opt.price;ledger('rev','trans',opr);bt.money=(bt.money||0)-opr;p.loan=null;p.yrs=ri(2,3);p.sal=Math.max(p.sal,marketSal(p,bt.tier));markMoved(p);addNews(bt.short+'が'+pname(p)+'の買取オプションを行使。完全移籍となり、移籍金'+money(opr)+'を受け取りました',1);continue;}
   if(p.loan){var back=S.clubs[p.loan.from];leaveClub(p);if(back){p.club=back.id;back.pl.push(p.id);}p.loan=null;if(back&&back.id===S.me)addNews(pname(p)+'がレンタル先から復帰');continue;}
   if(!p.club)continue;
   p.yrs--;p.renewNo=0;p.renewed=0;p.renewBlock=0;p.renewHard=0;p.loanList=0;
@@ -3646,6 +3709,7 @@ function negOpen(kind,id,ext){
   if(usage>.45){N.done=true;negLine(N,'them',pick([pname(p)+'はうちの主力なので、貸し出しは考えていません。','申し訳ないですが、'+pname(p)+'は今季の構想に入っています。']));return N;}
   negLine(N,'them',pick([pname(p)+'を期限付きで、ということですね。出場機会を与えてもらえるなら前向きに考えます。','うちでは出番が少ないので、試合経験を積ませたいとは思っていました。','武者修行の場としてなら、ありがたい話です。']));
   negLine(N,'them',pick(['年俸の'+Math.round(N.need*100+10)+'%ほどは、そちらで負担してください。','条件として、年俸の'+Math.round(N.need*100+10)+'%はお願いしたい。']));
+  N.optT=optTerms(p);
   return N;
  }
  /* フリー */
@@ -3659,7 +3723,7 @@ function negToPlayer(N){
  var p=N.p;N.stage='player';N.round=0;N.used={};N.who=pname(p);
  N.want=(N.kind==='loan'?p.sal*N.share:wantSal(p))*(.97+.06*rnd());N.yrsPref=p.age<=24?3:p.age>=31?2:2;
  negLine(N,'sys','クラブ間で合意しました。続いて'+pname(p)+'本人と条件を話し合います。');
- if(N.kind==='loan'){negLine(N,'them',pick(['出場機会をもらえるなら、ぜひ挑戦したいです。よろしくお願いします。','試合に出て、成長して戻りたい。よろしくお願いします。']));return;}
+ if(N.kind==='loan'){negLine(N,'them',N.opt?pick(['完全移籍の可能性もあるんですね。結果を出して、ここに残れるようにがんばります。','買い取ってもらえるように、1年で証明してみせます。']):pick(['出場機会をもらえるなら、ぜひ挑戦したいです。よろしくお願いします。','試合に出て、成長して戻りたい。よろしくお願いします。']));return;}
  negLine(N,'them',pick({money:['条件しだいですね。','気持ちより、まずは条件の話をしましょう。'],loyal:['声をかけてもらえたのは光栄です。','熱心に誘っていただいて、ありがとうございます。'],ambition:['チャレンジできる環境なら前向きです。','このクラブがどこを目指しているのか、聞かせてください。'],stable:['長く必要としてもらえるなら心強いです。','落ち着いてプレーできる環境を探していました。'],easy:['いい話だと思っています。','楽しそうなチームですね。']}[p.pers])+'年俸は'+money(Math.round(N.want*1.06/10)*10)+'、'+N.yrsPref+'年くらいを希望します。');
 }
 function gapLine(g,pers){
@@ -3692,8 +3756,12 @@ function negSubmit(N,o){
   return N;
  }
  if(N.stage==='club'&&N.kind==='loan'){
-  var sh=o.share;negLine(N,'gm',pick(['年俸の'+Math.round(sh*100)+'%を、こちらで負担します。','年俸は'+Math.round(sh*100)+'%までうちが持ちます。']));
-  if(sh>=N.need){negLine(N,'them',pick(['その条件で貸し出しましょう。','わかりました。しっかり使ってやってください。','いいでしょう。ひと回り大きくして返してください。']));N.share=sh;negToPlayer(N);return N;}
+  var sh=o.share,op=o.opt&&N.optT&&!N.optT.no?N.optT:null,need=op?Math.max(.4,N.need-.1):N.need;
+  negLine(N,'gm',(op?'買取オプションを付けたい。そのうえで、':'')+pick(['年俸の'+Math.round(sh*100)+'%を、こちらで負担します。','年俸は'+Math.round(sh*100)+'%までうちが持ちます。']));
+  if(op&&!N.optSaid){N.optSaid=1;negLine(N,'them',pick(['買取オプションですか。レンタル料'+money(op.fee)+'、買取額'+money(op.price)+'。この条件なら応じます。','うちとしても悪くない話です。レンタル料は'+money(op.fee)+'、シーズン後に買い取るなら'+money(op.price)+'でお願いします。','買い取りの可能性があるなら、レンタル料'+money(op.fee)+'と買取額'+money(op.price)+'。そのかわり年俸の負担は少し譲りましょう。']));}
+  if(op&&S.fin.cash<op.fee){negLine(N,'sys','レンタル料を払う資金が足りません（'+money(S.fin.cash)+'）');return N;}
+  if(!budgetOK(N.p.sal*sh)){negLine(N,'sys','経営陣：その負担だと人件費の上限を超えます（増える額 '+money(N.p.sal*sh)+'・残り'+money(budgetRoom())+'）');return N;}
+  if(sh>=need){negLine(N,'them',op?pick(['では、買取オプション付きで貸し出しましょう。','わかりました。活躍したら、ぜひ買い取ってやってください。','いいでしょう。あとはシーズン後の判断にお任せします。']):pick(['その条件で貸し出しましょう。','わかりました。しっかり使ってやってください。','いいでしょう。ひと回り大きくして返してください。']));N.share=sh;N.opt=op;negToPlayer(N);return N;}
   N.round++;
   if(N.round>=N.max){negLine(N,'them',pick(['その負担ではお貸しできません。','残念ですが、今回の貸し出しは見送ります。']));return negClose(N,false);}
   negLine(N,'them',pick(['もう少し負担していただかないと。','うちも余裕があるわけではないので、もう少しお願いします。','その割合だと、上が納得しません。']));return N;
@@ -3758,7 +3826,7 @@ function negClose(N,ok){
  var r;
  if(N.kind==='renew'){p.yrs=p.yrs+N.yrs;p.sal=N.sal;p.renewNo=0;p.renewed=1;addNews(pname(p)+'と契約を更新（'+N.yrs+'年・年俸'+money(N.sal)+'）');r={ok:true};}
  else if(N.kind==='free'||N.kind==='buy'){r=completeSign(p,N.fee||0,N.sal,N.yrs);}
- else if(N.kind==='loan'){r=completeLoan(p,N.share);}
+ else if(N.kind==='loan'){r=completeLoan(p,N.share,N.opt);}
  else if(N.kind==='coach'){r=offerCoach(N.id,N.sal,N.yrs,true);}
  else if(N.kind==='coachx'){r=extendCoach(N.yrs,N.sal);}
  else if(N.kind==='rookie'){N.e.st='内定';N.e.offer=N.e.offer||{sal:N.sal,yrs:N.yrs};p.sal=N.sal;addNews(rookieJoinNews(p),1);r={ok:true};}
@@ -3778,13 +3846,16 @@ function completeSign(p,fee,sal,yrs){
  addNews(pname(p)+'が'+(from?from.short+'から完全移籍で':'フリーで')+'加入'+(fee?'（移籍金'+money(fee)+'）':''),1);
  return {ok:true,msg:pname(p)+'の獲得が決まりました'};
 }
-function completeLoan(p,share){
+function completeLoan(p,share,opt){
  var mc=myClub(),from=S.clubs[p.club];
  if(squadSize()>=40)return {ok:false,msg:'登録上限（40人）に達しています'};
  if(foreignBlocked(p))return {ok:false,msg:'JFLでは外国籍選手の登録は5人までです'};
  if(!budgetOK(p.sal*share))return {ok:false,msg:budgetMsg()};
+ if(opt&&S.fin.cash<opt.fee)return {ok:false,msg:'レンタル料を払う資金が足りません'};
+ if(opt){ledger('exp','trans',opt.fee);from.money=(from.money||0)+opt.fee;}
  leaveClub(p);p.club=mc.id;mc.pl.push(p.id);p.loan={from:from.id,share:share};markMoved(p);
- addNews(pname(p)+'が'+from.short+'から期限付き移籍で加入',1);
+ if(opt)p.loan.opt={price:opt.price,fee:opt.fee,yrs:opt.yrs,y:S.year};
+ addNews(pname(p)+'が'+from.short+'から期限付き移籍で加入'+(opt?'（買取オプション付き・レンタル料'+money(opt.fee)+'）':''),1);
  return {ok:true,msg:pname(p)+'のレンタル加入が決まりました（今季終了まで）'};
 }
 
@@ -4712,7 +4783,8 @@ function decisionHTML(m){
   var opts=m.lv===2?(m.want==='loan'?['loan','list','promise','wait']:['list','loan','promise','wait']):['promise','loan','wait'];
   return '<div class="msg offer plea"><div class="t">'+esc(m.title)+'</div><div class="small">'+esc(m.body)+(p?'<br>OVR '+Math.round(ovr(p))+'・'+p.age+'歳・愛着 '+attLabel(attOf(p))+'・期限 '+fmtD(m.exp):'')+'</div><div class="row">'+opts.map(function(c,i){return '<button class="btn sm'+(i===0?' pri':'')+'" data-act="pleaResp" data-id="'+m.id+'" data-c="'+c+'">'+PLEA_OPT[c]+'</button>';}).join('')+(p?'<button class="btn sm" data-act="pl" data-id="'+p.id+'">選手を見る</button>':'')+'</div></div>';
  }
- if(m.kind==='loan')return '<div class="msg offer"><div class="t">'+esc(m.title)+'</div><div class="small">'+esc(m.body)+(p?'<br>年俸 '+money(p.sal)+'のうち '+money(p.sal*m.share)+'を先方が負担・期限 '+fmtD(m.exp):'')+'</div><div class="row"><button class="btn pri sm" data-act="offerResp" data-id="'+m.id+'" data-y="1">受け入れる</button><button class="btn sm" data-act="offerResp" data-id="'+m.id+'" data-y="0">断る</button>'+(p?'<button class="btn sm" data-act="pl" data-id="'+p.id+'">選手を見る</button>':'')+'</div></div>';
+ if(m.kind==='opt'){var o=p&&p.loan&&p.loan.opt;return '<div class="msg offer"><div class="t">'+esc(m.title)+'</div><div class="small">'+esc(m.body)+(p&&o?'<br>OVR '+Math.round(ovr(p))+'・'+p.age+'歳・愛着 '+attLabel(attOf(p))+'・期限 '+fmtD(m.exp):'')+'</div><div class="row"><button class="btn pri sm" data-act="optResp" data-id="'+m.id+'" data-y="1">買い取る'+(o?'（'+money(o.price)+'）':'')+'</button><button class="btn sm" data-act="optResp" data-id="'+m.id+'" data-y="0">見送る</button>'+(p?'<button class="btn sm" data-act="pl" data-id="'+p.id+'">選手を見る</button>':'')+'</div></div>';}
+ if(m.kind==='loan')return '<div class="msg offer"><div class="t">'+esc(m.title)+'</div><div class="small">'+esc(m.body)+(p?'<br>年俸 '+money(p.sal)+'のうち '+money(p.sal*m.share)+'を先方が負担'+(m.opt?'・買取額 '+money(m.opt.price)+'（いまの市場価値 '+money(valueOf(p))+'）':'')+'・期限 '+fmtD(m.exp):'')+'</div><div class="row"><button class="btn pri sm" data-act="offerResp" data-id="'+m.id+'" data-y="1">受け入れる</button><button class="btn sm" data-act="offerResp" data-id="'+m.id+'" data-y="0">断る</button>'+(p?'<button class="btn sm" data-act="pl" data-id="'+p.id+'">選手を見る</button>':'')+'</div></div>';
  return '<div class="msg offer"><div class="t">'+esc(m.title)+'</div><div class="small">'+esc(m.body)+(p?'<br>市場価値 '+money(valueOf(p))+'・OVR '+Math.round(ovr(p))+'・期限 '+fmtD(m.exp):'')+'</div><div class="row"><button class="btn pri sm" data-act="offerResp" data-id="'+m.id+'" data-y="1">受け入れる</button><button class="btn sm" data-act="neg" data-k="sell" data-id="'+m.id+'">交渉する</button><button class="btn sm" data-act="offerResp" data-id="'+m.id+'" data-y="0">断る</button>'+(p?'<button class="btn sm" data-act="pl" data-id="'+p.id+'">選手を見る</button>':'')+'</div></div>';
 }
 function secNoCoach(mode){
@@ -4944,7 +5016,7 @@ function prowHTML(p,pre){
  else if(!mineOut&&!p.prospect)meta.push('<span>'+esc(p.club&&S.clubs[p.club]?S.clubs[p.club].short:'フリー')+'</span>');
  if(p.inj>0)meta.push('<span class="pill bad">負傷 '+p.inj+'週</span>');
  if(p.sus>0)meta.push('<span class="pill bad">出場停止 '+p.sus+'</span>');
- if(mine&&p.loan&&p.loan.from!==S.me)meta.push('<span class="pill">レンタル加入</span>');
+ if(mine&&p.loan&&p.loan.from!==S.me)meta.push('<span class="pill">レンタル加入'+(p.loan.opt?'・買取OP':'')+'</span>');
  if(mine&&p.awk===S.year)meta.push('<span class="pill good">覚醒</span>');
  if(mine&&p.use)meta.push('<span class="pill info">'+USE_SHORT[p.use]+'</span>');
  if(mine&&!(p.loan&&p.loan.from!==S.me)){if(p.wantOut)meta.push('<span class="pill bad">移籍志願</span>');else if(p.att!=null&&p.att<30)meta.push('<span class="pill warn">不満</span>');}
@@ -5050,6 +5122,7 @@ function playerModal(pid){
  }
  if(!p.prospect){
   h+='<div><div class="kv"><span>年俸・契約</span><span class="num">'+money(p.sal)+'・残り'+Math.max(0,p.yrs)+'年</span></div><div class="kv"><span>市場価値</span><span class="num">'+money(valueOf(p))+'</span></div>';
+  if(p.loan&&p.loan.opt&&(mine||mineOut))h+='<div class="kv"><span>買取オプション</span><span class="num">'+money(p.loan.opt.price)+'<span class="small muted">（レンタル料 '+money(p.loan.opt.fee)+(mine?' 支払い済み':' 受け取り済み')+'）</span></span></div>';
   h+='<div class="kv"><span>今季（リーグ）</span><span class="num">'+p.st.ap+'試合 '+p.st.g+'得点 '+p.st.a+'アシスト'+(p.st.ap?'・平均評価 '+(p.st.rt/p.st.ap).toFixed(2):'')+(p.st.yc||p.st.rc?'・警告'+(p.st.yc||0)+(p.st.rc?'・退場'+p.st.rc:''):'')+'</span></div><div class="kv"><span>今季（カップ戦）</span><span class="num">'+p.st.cap+'試合 '+p.st.cg+'得点</span></div><div class="kv"><span>通算（リーグ）</span><span class="num">'+p.car.ap+'試合 '+p.car.g+'得点</span></div><div class="kv"><span>コンディション</span><span class="num">'+Math.round(p.cond)+(p.inj>0?'・負傷 残り'+p.inj+'週':'')+'</span></div></div>';
  }
  if(p.hist&&p.hist.length)h+='<details><summary class="small">年度別成績</summary><div class="tbl"><table>'+p.hist.slice().reverse().map(function(x){return '<tr><td class="num">'+seasonLabel(x.y)+'</td><td>'+esc(x.c)+'</td><td class="r num">'+x.ap+'試合</td><td class="r num">'+x.g+'得点</td></tr>';}).join('')+'</table></div></details>';
@@ -5060,6 +5133,8 @@ function playerModal(pid){
   a.push('<button class="btn" data-act="list" data-id="'+p.id+'">'+(p.list?'放出リストから外す':'放出リストに載せる')+'</button>');
   a.push('<button class="btn" data-act="loanList" data-id="'+p.id+'">'+(p.loanList?'レンタル移籍の候補から外す':'レンタル移籍の候補に載せる')+'</button>');
   a.push('<button class="btn bad" data-act="release" data-id="'+p.id+'">契約解除</button>');
+ }else if(mine&&optOf(p)){
+  if(S.seasonDone)a.push('<button class="btn pri" data-act="optEx" data-id="'+p.id+'">買取オプションを行使（'+money(p.loan.opt.price)+'）</button>');
  }else if(!mine&&!mineOut&&!p.prospect){
   if(p.club&&movedThisSeason(p))a.push('<button class="btn" disabled>今季移籍済みのため交渉不可</button>');
   else{
@@ -5068,6 +5143,8 @@ function playerModal(pid){
   }
  }
  if(mine&&p.loanList)h+='<div class="small" style="color:var(--warn)">レンタル移籍の候補に載っています。移籍期間中に受け入れ先から打診が届きます。</div>';
+ if(mine&&optOf(p)&&!S.seasonDone)h+='<div class="small muted">買取オプションは、シーズン終了後から6月29日までに行使するか決められます。行使すると'+(p.loan.opt.yrs||2)+'年契約・年俸'+money(p.sal)+'で完全移籍になります。</div>';
+ if(mineOut&&p.loan.opt)h+='<div class="small muted">受け入れ先がシーズン後に買取オプションを行使すると、'+money(p.loan.opt.price)+'で完全移籍になります。出番が多く、通用した選手ほど行使されます。</div>';
  if(!mine&&p.club&&movedThisSeason(p))h+='<div class="small muted">今季すでに移籍しているため、今季中は獲得交渉ができません。</div>';
  if(p.prospect){var e=(S.prospects||[]).filter(function(x){return x.id===p.id;})[0];if(e&&e.st==='未定')a.push('<button class="btn pri" data-act="prospect" data-id="'+p.id+'">仮契約を申し込む</button>');}
  if(a.length)h+='<div class="row">'+a.join('')+'</div>';
@@ -5675,7 +5752,7 @@ function initNegInputs(N){
  var mc=myClub();UI.nv={};
  if(N.kind==='sell')UI.nv.fee=Math.round(N.cur*1.2/10)*10;
  else if(N.stage==='club'&&N.kind==='buy')UI.nv.fee=Math.round(N.ask*.85/10)*10;
- else if(N.stage==='club'&&N.kind==='loan')UI.nv.share=.5;
+ else if(N.stage==='club'&&N.kind==='loan'){UI.nv.share=.5;UI.nv.opt=0;}
  else if(N.want){UI.nv.sal=Math.max(N.kind==='coach'?0:MIN_SAL[mc.tier],Math.round(N.want*.9/10)*10);UI.nv.yrs=N.yrsPref||2;}
 }
 /* ＋−の刻み：3桁万円までは10と100、4桁万円以上は100と1000 */
@@ -5773,7 +5850,7 @@ function renderNegPanel(){
  if(N.done){
   if(UI.negBusy){el.innerHTML='<div class="nres">…</div>';return;}
   if(N.pend&&N.e)h+='<div class="nres">'+ic('clock')+'<b>返事待ち</b><span>'+fmtD(N.e.ans)+'までに届きます</span></div>';
-  else h+=N.ok?'<div class="nres ok">'+ic('check')+'<b>契約成立</b><span>'+(N.kind==='sell'?'移籍金 '+money(N.cur):(N.fee?'移籍金 '+money(N.fee)+'・':'')+(N.sal?'年俸 '+money(N.sal)+'・'+N.yrs+'年':''))+'</span></div>':'<div class="nres ng">'+ic('x')+'<b>交渉不成立</b></div>';
+  else h+=N.ok?'<div class="nres ok">'+ic('check')+'<b>契約成立</b><span>'+(N.kind==='sell'?'移籍金 '+money(N.cur):N.kind==='loan'?'年俸の'+Math.round((N.share||0)*100)+'%を負担'+(N.opt?'・買取額 '+money(N.opt.price):''):(N.fee?'移籍金 '+money(N.fee)+'・':'')+(N.sal?'年俸 '+money(N.sal)+'・'+N.yrs+'年':''))+'</span></div>':'<div class="nres ng">'+ic('x')+'<b>交渉不成立</b></div>';
   h+='<button class="btn pri wide" data-act="negQuit">戻る</button>';el.innerHTML=h;return;
  }
  var cards=[];
@@ -5787,6 +5864,7 @@ function renderNegPanel(){
   cards=['cash','bond'];
  }else if(N.stage==='club'&&N.kind==='loan'){
   h+='<div class="nvh"><span><small>こちらが負担する年俸</small><b class="num">'+money(N.p.sal*UI.nv.share)+'</b></span><span class="small muted">年俸 '+money(N.p.sal)+'</span></div><div class="seg">'+[.5,.6,.7,.8,.9,1].map(function(v){return '<button class="chip'+(UI.nv.share===v?' on':'')+'" data-act="nvShare" data-v="'+v+'">'+Math.round(v*100)+'%</button>';}).join('')+'</div>';
+  h+=optPanelHTML(N);
  }else if(N.kind==='loan'){
   h+='<div class="small">年俸の'+Math.round(N.share*100)+'%（'+money(N.p.sal*N.share)+'）をこちらで負担します。</div><button class="btn pri wide" data-act="negGo">'+ic('chat')+'加入を依頼する</button>';el.innerHTML=h;return;
  }else{
@@ -5800,13 +5878,21 @@ function renderNegPanel(){
  h+='<button class="btn pri wide" data-act="negGo">'+ic('chat')+'この条件で提示する</button>';
  el.innerHTML=h;
 }
+/* 交渉画面：買取オプションを付けるかどうかと、その条件 */
+function optPanelHTML(N){
+ var T=N.optT,no=!T||T.no,on=!no&&UI.nv.opt;
+ var h='<div class="nvy"><small>買取オプション</small><div class="seg"><button class="chip'+(!on?' on':'')+'" data-act="nvOpt" data-v="0">付けない</button><button class="chip'+(on?' on':'')+'" data-act="nvOpt" data-v="1"'+(no?' disabled':'')+'>付ける</button></div></div>';
+ if(no)return h+'<div class="small muted">'+esc(S.clubs[N.p.club]?S.clubs[N.p.club].short:'相手クラブ')+'は将来の主力候補として育てている選手のため、買取オプションには応じません。</div>';
+ if(!on)return h+'<div class="small muted">付けると、シーズン後にあらかじめ決めた額で完全移籍に切り替えられます（レンタル料 '+money(T.fee)+'・買取額 '+money(T.price)+'）。</div>';
+ return h+'<div class="optbox"><div class="kv"><span>レンタル料（いま支払う・戻らない）</span><b class="num">'+money(T.fee)+'</b></div><div class="kv"><span>買取額（シーズン後に行使するか選ぶ）</span><b class="num">'+money(T.price)+'</b></div><div class="kv small muted"><span>完全移籍で獲る場合の目安</span><span class="num">'+money(T.ask)+'</span></div><div class="small muted">'+esc(T.why||'')+'行使すると'+T.yrs+'年契約・年俸'+money(N.p.sal)+'で完全移籍になります。年俸の負担は、オプションを付けると1割ほど譲ってもらえます。</div></div>';
+}
 function readNv(){['sal','fee'].forEach(function(k){var el=$('nv-'+k);if(el)UI.nv[k]=Math.max(0,Math.round((+el.value||0)/10)*10);});}
 function negGo(){
  var N=UI.neg;if(!N||N.done||UI.negBusy)return;readNv();
  var stg=N.stage,o={};
  if(N.kind==='sell'){o.fee=UI.nv.fee;UI.lastG=null;}
  else if(stg==='club'&&N.kind==='buy'){o.fee=UI.nv.fee;UI.lastG=o.fee/N.ask;}
- else if(stg==='club'&&N.kind==='loan'){o.share=UI.nv.share;UI.lastG=o.share/N.need;}
+ else if(stg==='club'&&N.kind==='loan'){o.share=UI.nv.share;o.opt=!!UI.nv.opt;UI.lastG=o.share/(o.opt&&N.optT&&!N.optT.no?Math.max(.4,N.need-.1):N.need);}
  else{o.sal=UI.nv.sal;o.yrs=UI.nv.yrs;if(N.want)UI.lastG=o.sal*(1-.04*Math.abs(o.yrs-(N.yrsPref||2))*(N.pers==='stable'||N.pers==='money'?1.5:1))/N.want;}
  negSubmit(N,o);
  if(N.stage!==stg&&!N.done){initNegInputs(N);UI.lastG=null;}
@@ -5951,6 +6037,9 @@ document.addEventListener('click',function(ev){
   case 'nv':{readNv();var big=d.d==='1'||d.d==='-1',sg=d.d.charAt(0)==='-'?-1:1,cur=UI.nv[d.k]||0;UI.nv[d.k]=Math.max(0,cur+sg*nSteps(cur)[big?1:0]);renderNegPanel();break;}
   case 'nvYrs':readNv();UI.nv.yrs=+d.v;renderNegPanel();break;
   case 'nvShare':UI.nv.share=+d.v;renderNegPanel();break;
+  case 'nvOpt':UI.nv.opt=+d.v;renderNegPanel();break;
+  case 'optResp':{var r3=respondOpt(d.id,d.y==='1'),inDec3=UI.sheetCur&&UI.sheetCur.key==='dec';closeSheet();res(r3);if(inDec3&&pendingDecisions().length)UI.sheetCur=null,showDecisions('day');break;}
+  case 'optEx':{var r4=optExercise(d.id);closeSheet();res(r4);break;}
   case 'negGo':negGo();break;
   case 'negCard':if(!UI.negBusy&&UI.neg){readNv();negCard(UI.neg,d.k);saveGame();revealNeg();}break;
   case 'negQuit':negQuit();break;
