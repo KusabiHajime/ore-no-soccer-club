@@ -865,6 +865,11 @@ var POS_NEAR={GK:[],CB:['DMF','LSB','RSB'],LSB:['CB','LMF','RSB'],RSB:['CB','RMF
  LMF:['LSB','CMF','LWG','RMF'],RMF:['RSB','CMF','RWG','LMF'],OMF:['CMF','LWG','RWG','ST','CF'],
  LWG:['LMF','OMF','ST','CF','RWG'],RWG:['RMF','OMF','ST','CF','LWG'],ST:['CF','OMF','LWG','RWG'],CF:['ST','OMF','LWG','RWG']};
 function nearPos(a,b){return a===b||!!(POS_NEAR[a]&&POS_NEAR[a].indexOf(b)>=0);}
+/* 隣ではないが現実にも起きるコンバート（SB⇔同じ側のウイング、SB⇔ボランチ、サイドハーフ⇔トップ下）。
+ * 認めるが、起用されにくく、適性の伸びも遅い（隣のポジションの約3分の1） */
+var POS_ALT={LSB:['LWG','DMF'],RSB:['RWG','DMF'],LWG:['LSB'],RWG:['RSB'],DMF:['LSB','RSB'],LMF:['OMF'],RMF:['OMF'],OMF:['LMF','RMF']};
+/* ポジションの関係：2＝本職か隣、1＝現実にもあるコンバート、0＝関係なし */
+function posRel(a,b){return nearPos(a,b)?2:POS_ALT[a]&&POS_ALT[a].indexOf(b)>=0?1:0;}
 var POSNAME={GK:'ゴールキーパー',CB:'センターバック',LSB:'左サイドバック',RSB:'右サイドバック',DMF:'守備的MF（ボランチ）',CMF:'センターハーフ',LMF:'左サイドハーフ',RMF:'右サイドハーフ',OMF:'攻撃的MF（トップ下）',LWG:'左ウイング',RWG:'右ウイング',ST:'セカンドストライカー',CF:'センターフォワード'};
 var POSLINE={GK:'GK',CB:'DF',LSB:'DF',RSB:'DF',DMF:'MF',CMF:'MF',LMF:'MF',RMF:'MF',OMF:'MF',LWG:'FW',RWG:'FW',ST:'FW',CF:'FW',SB:'DF',SMF:'MF',WG:'FW'};
 var FOOT_N={R:'右',L:'左',B:'両'};
@@ -1077,7 +1082,8 @@ function genApt(pos,foot){
  if(pos==='GK')return a;
  POS.forEach(function(q){
   if(q===pos||q==='GK')return;
-  if(!nearPos(pos,q)){a[q]=0;return;}
+  var rl=posRel(pos,q);if(!rl){a[q]=0;return;}
+  if(rl===1){var r1=rnd();a[q]=r1<.02?2:r1<.13?1:0;return;}
   var b=fitSim(pos,q),sd=POS_SIDE[q];
   if(sd&&foot){if(foot==='B')b+=.03;else if(foot===sd)b+=.02;else b-=.05;}
   a[q]=b>=.9?(rnd()<.55?2:1):b>=.84?(rnd()<.3?2:rnd()<.75?1:0):b>=.76?(rnd()<.45?1:0):(rnd()<.06?1:0);
@@ -1095,17 +1101,17 @@ function genFoot(pos){
 var APT_TH=[600,1500,4000];
 function aptGrow(p,pos,mins){
  if(!p||p.ghost||!mins||pos===p.pos||pos==='GK'||p.pos==='GK')return null;
- if(!nearPos(p.pos,pos))return null;
+ var rl=posRel(p.pos,pos);if(!rl)return null;
  var cur=aptOf(p,pos);if(cur>=3)return null;
- var a=p.age,af=a<=21?1.3:a<=25?1.1:a<=29?1:a<=32?.8:.6,same=bpos(pos)===bpos(p.pos)?1.5:1;
+ var a=p.age,af=a<=21?1.3:a<=25?1.1:a<=29?1:a<=32?.8:.6,same=bpos(pos)===bpos(p.pos)?1.5:rl===1?.35:1;
  p.ax=p.ax||{};p.ax[pos]=(p.ax[pos]||0)+mins*(p.adapt||1)*af*same;
  if(p.ax[pos]>=APT_TH[cur]){p.ax[pos]=0;p.apt=p.apt||{};p.apt[pos]=cur+1;return cur+1;}
  return null;
 }
 /* 起用時の重み：本職と隣のポジション以外は、ほかに人がいないときの最後の手段 */
-function placeF(p,pos){return nearPos(p.pos,pos)?1:.55;}
+function placeF(p,pos){return [.55,.85,1][posRel(p.pos,pos)];}
 /* 隣り合わないポジションの適性（旧版のセーブや生成で付いたもの）を外す */
-function pruneFarApt(){for(var id in S.P){var p=S.P[id];['apt','ax'].forEach(function(k){var o=p[k];if(!o)return;Object.keys(o).forEach(function(q){if(q!==p.pos&&!nearPos(p.pos,q))delete o[q];});});}}
+function pruneFarApt(){for(var id in S.P){var p=S.P[id];['apt','ax'].forEach(function(k){var o=p[k];if(!o)return;Object.keys(o).forEach(function(q){if(q!==p.pos&&!posRel(p.pos,q))delete o[q];});});}}
 function aptProgress(p,pos){var cur=aptOf(p,pos);if(cur>=3)return 1;return clamp(((p.ax&&p.ax[pos])||0)/APT_TH[cur],0,1);}
 function subPos(p){return POS.filter(function(q){return q!==p.pos&&aptOf(p,q)>=2;});}
 function effAt(p,pos){return ovrAt(p,pos)*fitOf(p,pos);}
@@ -1416,13 +1422,13 @@ function playTimeline(H,A,xh,xa,sh,sa,opt,r){
   if(hole&&fws.length){
    var fi=fws[0];
    if(X.subs<X.maxSub&&X.win<X.maxWin&&X.bench.length&&q>.25){
-    var bi=-1,bv=-1;X.bench.forEach(function(b,j){if(b.pos==='GK'||!nearPos(b.pos,lpos))return;var v=effAt(b,lpos);if(v>bv){bv=v;bi=j;}});
+    var bi=-1,bv=-1;X.bench.forEach(function(b,j){if(b.pos==='GK'||!posRel(b.pos,lpos))return;var v=effAt(b,lpos)*placeF(b,lpos);if(v>bv){bv=v;bi=j;}});
     if(bi>=0){outP=X.on[fi];inP=X.bench.splice(bi,1)[0];X.on[fi]=null;X.on[li]=inP;X.out[outP.id]=m;X.start[inP.id]=m;X.pos[inP.id]=lpos;X.rt[inP.id]=0;X.subs++;X.win++;if(plan[sd].w.length)plan[sd].w.pop();how='sub';
      L({t:'sub',m:m,s:sd,o:outP,i:inP,pos:lpos,tac:1});}
    }
    if(how!=='sub'){
     /* 穴の隣のポジションの選手（CBの穴ならボランチやSB）が下がって埋める。いなければ前線の選手 */
-    var ni=idxOn(X).filter(function(i){var pp=X.on[i];return i!==li&&pp.pos!=='GK'&&nearPos(pp.pos,lpos)&&X.slots[i][0]!==lpos&&POSLINE[X.slots[i][0]]!=='DF';}).sort(function(a,b){return effAt(X.on[b],lpos)-effAt(X.on[a],lpos);})[0];
+    var ni=idxOn(X).filter(function(i){var pp=X.on[i];return i!==li&&pp.pos!=='GK'&&posRel(pp.pos,lpos)&&X.slots[i][0]!==lpos&&POSLINE[X.slots[i][0]]!=='DF';}).sort(function(a,b){return effAt(X.on[b],lpos)*placeF(X.on[b],lpos)-effAt(X.on[a],lpos)*placeF(X.on[a],lpos);})[0];
     if(ni!=null)fi=ni;
     mover=X.on[fi];X.on[li]=mover;X.on[fi]=null;X.pos[mover.id]=lpos;how='shift';}
   }
@@ -1450,9 +1456,10 @@ function playTimeline(H,A,xh,xa,sh,sa,opt,r){
    /* 下げる選手：疲れ・警告持ち・負けているときは守備的な選手、勝っているときは攻撃的な選手 */
    var ord=idx.sort(function(a,b){function sc(i){var p=X.on[i],R=ROLE[X.slots[i][0]];return (100-p.ab.sta)*.6+(100-(p.cond||100))*.5+(X.yc[p.id]&&R.d>.4?25:0)+(d<0?R.d*15:d>0?R.a*12:0)+(X.rt[p.id]||0)*-10+rnd()*12;}return sc(b)-sc(a);});
    var mineX=X.T.cl.id===S.me,oi=-1,pos=null,bi=-1,bv=-1;
-   for(var oo=0;oo<ord.length&&bi<0;oo++){
+   /* まずは本職か隣のポジションの控えを探し、いなければ現実にもあるコンバート先の控えまで広げる */
+   for(var need=2;need>=1&&bi<0;need--)for(var oo=0;oo<ord.length&&bi<0;oo++){
     oi=ord[oo];pos=X.slots[oi][0];bv=-1;
-    X.bench.forEach(function(b,j){if(b.pos==='GK'||!nearPos(b.pos,pos))return;var v=effAt(b,pos)*(d<0&&ROLE[pos].a<.5?.97:1)*(mineX&&b.use==='sub'?1.35:1);if(v>bv){bv=v;bi=j;}});
+    X.bench.forEach(function(b,j){if(b.pos==='GK'||posRel(b.pos,pos)<need)return;var v=effAt(b,pos)*placeF(b,pos)*(d<0&&ROLE[pos].a<.5?.97:1)*(mineX&&b.use==='sub'?1.35:1);if(v>bv){bv=v;bi=j;}});
    }
    if(bi<0)return;
    var outP=X.on[oi],inP=X.bench.splice(bi,1)[0];
