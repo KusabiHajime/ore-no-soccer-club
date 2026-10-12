@@ -656,6 +656,9 @@ body.running .dock .btn.on{background:var(--club);color:var(--club-ink);border-c
 .mopt{display:flex;flex-direction:column;gap:2px;text-align:left;width:100%;border:1px solid var(--line);background:var(--surface2);border-radius:12px;padding:10px 12px;box-shadow:inset 0 -2px 0 rgba(0,0,0,.06)}
 .mopt b{font-size:14px}.mopt span{font-size:12px;color:var(--muted)}
 .mopt:active{transform:translateY(1px)}
+.shimg{border-radius:12px;overflow:hidden;border:1px solid var(--line);background:var(--surface2);min-height:120px;display:flex;align-items:center;justify-content:center}
+.shimg img{display:block;width:100%;height:auto}
+a.btn{text-decoration:none;color:inherit}
 .optbox{border:1px solid var(--line);border-radius:10px;padding:8px 10px;background:var(--surface2);display:flex;flex-direction:column;gap:2px}
 .chip[disabled]{opacity:.45}
 .mopts2{display:grid;grid-template-columns:1fr 1fr;gap:6px}
@@ -1844,13 +1847,16 @@ function applyMatch(T,r,side,comp){
  if(c.coach){var fk=formOf(c);if(fk!==c.coach.form){c.coach.fam=c.coach.fam||{};var f0=c.coach.fam[fk]||(.55+.25*c.coach.flex/100);c.coach.fam[fk]=Math.min(1,f0+.025+.045*c.coach.flex/100);}}
  var mins=(r.ms&&r.ms[side]&&r.ms[side].mins)||{},byId={};
  ((r.rtx&&r.rtx[side])||[]).forEach(function(x){byId[x.id]=x;});
+ /* シーズン総括の画像用：自クラブのリーグ戦で使った布陣の回数 */
+ if(mine&&lg){var fu=S.fu;if(!fu||fu.y!==S.year)fu=S.fu={y:S.year,f:{}};var fk2=formOf(c);fu.f[fk2]=(fu.f[fk2]||0)+1;}
  T.xi.concat(T.bench||[]).forEach(function(p){
   if(!p||p.ghost)return;var mn=mins[p.id];if(!mn)return;
   var x=byId[p.id],pos=x?x.pos:p.pos;
   var drop=(6+(100-p.ab.sta)/10)*(press?1.3:1)*Math.min(1,mn/80);p.cond=clamp(p.cond-drop,30,100);
   if(lg){p.st.ap++;p.car.ap++;}else p.st.cap++;
   p.st.mins+=mn;
-  if(mine&&lg){var ym=S.ymin;if(!ym||ym.y!==S.year)ym=S.ymin={y:S.year,u:0,t:0};ym.t+=mn;if(p.age<=23)ym.u+=mn;}
+  if(mine&&lg){var ym=S.ymin;if(!ym||ym.y!==S.year)ym=S.ymin={y:S.year,u:0,t:0};ym.t+=mn;if(p.age<=23)ym.u+=mn;
+   if(x&&!x.sub){p.st.gs=(p.st.gs||0)+1;p.st.pp=p.st.pp||{};p.st.pp[pos]=(p.st.pp[pos]||0)+1;}}
   if(x&&lg)p.st.rt+=x.rt;
   var up=aptGrow(p,pos,mn);
   if(up&&mine)addNews(pname(p)+'が'+pos+'に慣れてきました（適性'+APT_MARK[up-1]+'→'+APT_MARK[up]+'）',up>=2);
@@ -2475,6 +2481,7 @@ function finalizeSeason(){
  var sea=S.fin.season,rev=sum(Object.keys(sea.rev),function(k){return sea.rev[k];}),exp=sum(Object.keys(sea.exp),function(k){return sea.exp[k];});
  var rec={y:S.year,tier:myT,rank:rank,w:row.w,d:row.d,l:row.l,gf:row.gf,ga:row.ga,pts:row.pts,fate:fate,cup:cupRes,rev:rev,exp:exp,cash:S.fin.cash,
   att:mc.att.n?Math.round(mc.att.s/mc.att.n):0,coach:mc.coach?cname(mc.coach):'-',form:formOf(mc),awards:awards,lic:S.myLic,target:S.board.target?S.board.target.t:''};
+ rec.lu=seasonLineup();
  S.hist.push(rec);
  S.fin.hist.push({y:S.year,rev:sea.rev,exp:sea.exp,cash:S.fin.cash});
  evaluateBoard(rec);
@@ -2911,6 +2918,32 @@ function respondPlea(mid,c){
 }
 /* 移籍を志願している、または愛着がひどく低い選手は契約を延長しない */
 function refusesRenew(p){return !!p.wantOut||attOf(p)<12;}
+
+/* ---------- シーズン総括（シェア用の画像のもと） ----------
+ * 基本フォーメーション：リーグ戦でいちばん多く使った布陣に、各ポジションで先発した回数の多い選手を当てはめる。
+ * 主な控え：先発11人以外で、リーグ戦の出場時間が長い7人。シーズン終了時点で在籍している選手から選ぶ */
+function luSnap(p,pos){return {id:p.id,n:pname(p),sei:p.sei,mei:p.mei,nat:natOf(p),age:p.age,pos:pos||p.pos,ap:p.st.ap,gs:p.st.gs||0,g:p.st.g};}
+function seasonLineup(){
+ var mc=myClub(),fu=S.fu&&S.fu.y===S.year?S.fu.f:null,form=formOf(mc),best=0,k;
+ if(fu)for(k in fu)if(fu[k]>best&&FORMS[k]){best=fu[k];form=k;}
+ var ps=roster(mc).filter(function(p){return !p.ghost&&!(p.loan&&p.loan.from===S.me&&p.club!==S.me);});
+ var slots=FORMS[form].s,xi=new Array(slots.length),used={};
+ function sc(p,pos){
+  if((pos==='GK')!==(p.pos==='GK'))return -1;
+  var pp=p.st.pp||{},g=pp[pos]||0,nr=0,q;for(q in pp)if(q!==pos&&nearPos(q,pos))nr+=pp[q];
+  return g*100+nr*30+(p.st.gs||0)*4+(p.st.mins||0)/90+(p.pos===pos?6:nearPos(p.pos,pos)?2:0)+ovr(p)*.02;
+ }
+ for(var n=0;n<slots.length;n++){
+  var bs=-1,bp=null,bv=-1;
+  for(var s=0;s<slots.length;s++){if(xi[s])continue;for(var i=0;i<ps.length;i++){var p=ps[i];if(used[p.id])continue;var v=sc(p,slots[s][0]);if(v>bv){bv=v;bs=s;bp=p;}}}
+  if(!bp)break;xi[bs]=bp;used[bp.id]=1;
+ }
+ var bench=ps.filter(function(p){return !used[p.id];}).sort(function(a,b){return (b.st.mins||0)-(a.st.mins||0)||ovr(b)-ovr(a);}).slice(0,7);
+ var top=ps.slice().sort(function(a,b){return b.st.g-a.st.g||(b.st.a||0)-(a.st.a||0);})[0];
+ var ace=ps.filter(function(p){return p.st.ap>=Math.max(5,Math.round((mc.mp||0)*.3));}).sort(function(a,b){return b.st.rt/b.st.ap-a.st.rt/a.st.ap;})[0];
+ return {form:form,xi:xi.map(function(p,i){return p?luSnap(p,slots[i][0]):null;}),bench:bench.map(function(p){return luSnap(p);}),
+  top:top&&top.st.g>0?{n:pname(top),g:top.st.g}:null,ace:ace?{n:pname(ace),r:Math.round(ace.st.rt/ace.st.ap*100)/100}:null,coach:mc.coach?cname(mc.coach):''};
+}
 
 /* ---------- 契約更改 ---------- */
 function demand(p){
@@ -3887,6 +3920,7 @@ function completeLoan(p,share,opt){
 /* ---- 06c_art.js ---- */
 /* ============ 絵：ピクトグラム・顔アイコン・秘書 ============ */
 var ICONS={
+ share:'<path d="M12 15V4"/><path d="m7.5 8.5 4.5-4.5 4.5 4.5"/><path d="M5 12v6.5A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5V12"/>',
  home:'<path d="M3.5 10.5 12 4l8.5 6.5V20a1 1 0 0 1-1 1H15v-6H9v6H4.5a1 1 0 0 1-1-1z"/>',
  team:'<path d="M8.5 3.5 3.5 6.5l2 4.5 2.5-1V20.5h8V10l2.5 1 2-4.5-5-3c-.6 1.6-2 2.6-3.5 2.6S9.1 5.1 8.5 3.5z"/>',
  ball:'<circle cx="12" cy="12" r="8.5"/><path d="m12 8 3.4 2.5-1.3 4h-4.2l-1.3-4z"/><path d="M12 3.5V8M15.4 10.5l4.2-1.4M14.1 14.5l2.6 3.7M9.9 14.5l-2.6 3.7M8.6 10.5 4.4 9.1"/>',
@@ -4943,7 +4977,7 @@ function welcome(){
 /* ---------- ホーム ---------- */
 function vHome(){
  var mc=myClub(),h=backupCard();
- if(S.seasonDone)h+='<div class="card hl"><div class="row between"><h2>'+seasonLabel(S.year)+'シーズン終了</h2><button class="btn sm" data-act="review">振り返り</button></div><div class="small">'+esc(S.seasonDone.fate)+'。'+(S.meet&&!S.meet.done?'次のシーズンへ進む前に、社長との面談があります。</div><button class="btn pri" data-act="meet">'+ic('chat')+'面談に向かう</button></div>':'準備ができたら「次季へ」。</div></div>');
+ if(S.seasonDone)h+='<div class="card hl"><div class="row between"><h2>'+seasonLabel(S.year)+'シーズン終了</h2><button class="btn sm" data-act="review">振り返り</button></div><div class="small">'+esc(S.seasonDone.fate)+'。'+(S.meet&&!S.meet.done?'次のシーズンへ進む前に、社長との面談があります。</div><div class="row"><button class="btn pri" data-act="meet">'+ic('chat')+'面談に向かう</button><button class="btn" data-act="shareSeason">'+ic('share')+'総括をXでシェア</button></div></div>':'準備ができたら「次季へ」。</div><button class="btn" data-act="shareSeason">'+ic('share')+'シーズンの総括をXでシェア</button></div>');
  h+=todayCard();
  h+=secCompact();
  h+=quickMenu();
@@ -5748,6 +5782,7 @@ function showReview(y){
  h+='<div class="kv"><span>収入 / 支出</span><span class="num">'+money(r.rev)+' / '+money(r.exp)+'</span></div><div class="kv"><span>期末資金</span><span class="num">'+money(r.cash)+'</span></div><div class="kv"><span>平均観客</span><span class="num">'+fmtN(r.att)+'人</span></div><div class="kv"><span>監督</span><span>'+esc(r.coach)+'（'+r.form+'）</span></div>';
  if(r.lic&&r.tier!=='J1')h+='<div class="kv"><span>ライセンス判定</span><span>'+(r.lic.lv?r.lic.lv+'ライセンス相当':'基準未達')+'</span></div>';
  h+=''+hd('table','各リーグ')+'<div class="tbl"><table>'+TIERS.map(function(t){var a=r.awards[t];return '<tr><td>'+t+'</td><td>優勝 '+esc(S.clubs[a.champ]?S.clubs[a.champ].short:'-')+'</td><td class="small">得点王 '+(a.scorer?esc(a.scorer.n)+'（'+esc(a.scorer.c)+'・'+a.scorer.g+'点）':'-')+'</td><td class="small">MVP '+(a.mvp?esc(a.mvp.n)+'（'+esc(a.mvp.c)+'）':'-')+'</td></tr>';}).join('')+'</table></div>';
+ if(r.lu||(!y&&S.seasonDone))h+='<button class="btn wide" data-act="shareSeason"'+(y?' data-y="'+r.y+'"':'')+'>'+ic('share')+'シーズンの総括をXでシェア</button>';
  if(!y&&storeState()!=='ok')h+='<button class="btn wide" data-act="saveFile">'+ic('download')+'ここまでをセーブファイルに保存</button>';
  if(!y&&S.seasonDone&&!S.over)h+=S.meet&&!S.meet.done?'<button class="btn pri wide" data-act="meet">'+ic('chat')+esc(presName())+'社長との面談へ</button>':'<button class="btn pri wide" data-act="nextSeason">次のシーズンへ</button>';
  openSheet(h);
@@ -6098,6 +6133,9 @@ document.addEventListener('click',function(ev){
    else{toast(r3.msg);saveGame();render();var still=S.coachPool.filter(function(x){return x.id===d.id;})[0];if(still&&!(still.block&&still.block>S.day))coachNegModal(d.id);else closeSheet();}
    break;}
   case 'review':showReview(d.y);break;
+  case 'shareSeason':shareSheet(d.y);break;
+  case 'shareX':shareX();break;
+  case 'shareSave':shareSave();break;
   case 'save':if(saveNow())toast('保存しました');break;
   case 'export':textExport(packSave(S),false);break;
   case 'saveFile':saveFile();break;
@@ -6114,6 +6152,183 @@ document.addEventListener('keydown',function(e){
 
 function boot(){showTitle(true);}
 boot();
+
+/* ---- 07b_share.js ---- */
+/* ============ シーズン総括のシェア（1枚の画像＋Xへの投稿） ============
+ * 画像は1600×900（Xのタイムラインで切り取られずに表示される16:9）。
+ * 左：シーズンの結果、右：基本フォーメーション（顔・名前つき）、左下：主な控え7人。
+ * 投稿は、共有メニュー（Web Share）が使える端末では画像と文章をまとめてXに渡す。
+ * 使えない画面では「画像を保存」→「Xの投稿画面を開く（文章入り）」の2段階にする */
+var SHARE_URL='https://kusabihajime.github.io/ore-no-soccer-club/';
+var SH_LINE={GK:'#d27a12',DF:'#2f6fc8',MF:'#1f9a5c',FW:'#d33f62'};
+var SH_FD="'Dela Gothic One','Hiragino Sans','Yu Gothic',sans-serif",SH_FB="'BIZ UDPGothic','Hiragino Sans','Yu Gothic','Meiryo',sans-serif",SH_FN="'Barlow Condensed','BIZ UDPGothic',sans-serif";
+var SH_CUP=[['emp','全日本選手権'],['lev','リーグカップ'],['acle','アジアクラブ選手権']];
+
+/* そのシーズンの布陣のスナップショット。終了直後で記録がなければ、その場で作る */
+function lineupOf(r){
+ if(!r)return null;if(r.lu)return r.lu;
+ if(S.seasonDone&&r===S.hist[S.hist.length-1]){r.lu=seasonLineup();return r.lu;}
+ return null;
+}
+function shareRec(y){return y?S.hist.filter(function(x){return x.y===+y;})[0]:S.hist[S.hist.length-1];}
+function shareText(r){
+ var mc=myClub(),tn=TIERNAME[r.tier],up=/昇格/.test(r.fate),dn=/降格/.test(r.fate);
+ var s=mc.name+'、'+seasonLabel(r.y)+'シーズンは'+tn+'で'+r.rank+'位（'+r.w+'勝'+r.d+'分'+r.l+'敗・勝点'+r.pts+'）。';
+ if(r.rank===1)s+=tn+'優勝'+(up?'、'+r.fate:'')+'！';
+ else if(up)s+=r.fate+'を決めました！';
+ else if(dn)s+=r.fate+'……来季こそ巻き返します。';
+ var cw=SH_CUP.filter(function(c){return r.cup&&r.cup[c[0]]==='優勝';}).map(function(c){return c[1];});
+ if(cw.length)s+=cw.join('と')+'も制覇！';
+ return lgFix(s+'\n#俺のサッカークラブ\n'+SHARE_URL);
+}
+function shareIntent(t){return 'https://twitter.com/intent/tweet?text='+encodeURIComponent(t);}
+function shareFileName(r){return '俺のサッカークラブ_'+String(myClub().short||'').replace(/[\\/:*?"<>|\s]/g,'')+'_'+seasonLabel(r.y).replace('/','-')+'.png';}
+
+/* ---- 描画の部品 ---- */
+function shSvgImg(svg){return new Promise(function(res){var im=new Image();im.onload=function(){res(im);};im.onerror=function(){res(null);};im.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg.replace('<svg ','<svg xmlns="http://www.w3.org/2000/svg" '));});}
+function shFonts(){
+ if(!document.fonts||!document.fonts.load)return Promise.resolve();
+ var L=['400 40px "Dela Gothic One"','700 24px "BIZ UDPGothic"','400 24px "BIZ UDPGothic"','700 40px "Barlow Condensed"'].map(function(f){return document.fonts.load(f,'あA1').catch(function(){});});
+ return Promise.race([Promise.all(L),new Promise(function(r){setTimeout(r,2500);})]);
+}
+function shRR(x,c,y,w,h,r){x.beginPath();x.moveTo(c+r,y);x.arcTo(c+w,y,c+w,y+h,r);x.arcTo(c+w,y+h,c,y+h,r);x.arcTo(c,y+h,c,y,r);x.arcTo(c,y,c+w,y,r);x.closePath();}
+/* 幅に収まるまで文字を小さくする */
+function shFit(x,t,maxW,size,min,weight,fam){var s=size;do{x.font=weight+' '+s+'px '+fam;if(x.measureText(t).width<=maxW)break;s--;}while(s>min);return s;}
+function shRGBA(hex,a){var h=String(hex||'#1f4e9c').replace('#','');if(h.length===3)h=h.replace(/./g,'$&$&');var n=parseInt(h,16);return 'rgba('+(n>>16&255)+','+(n>>8&255)+','+(n&255)+','+a+')';}
+function shPill(x,t,cx,cy,bg,fg,size,fam,pad){
+ x.font='700 '+size+'px '+fam;var w=x.measureText(t).width+pad*2,h=size+pad*1.2;
+ x.fillStyle=bg;shRR(x,cx,cy-h/2,w,h,h/2);x.fill();x.fillStyle=fg;x.textBaseline='middle';x.textAlign='left';x.fillText(t,cx+pad,cy+1);x.textBaseline='alphabetic';
+ return w;
+}
+
+/* ---- 画像を作る（Blobで返す） ---- */
+function drawSeasonCard(r,lu){
+ var W=1600,H=900,mc=myClub(),kit=clubKit(S.me),c1=kit[0],c2=kit[1];
+ var faces=lu.xi.map(function(e){return e?shSvgImg(faceSVG({seed:hashS(e.id+(e.sei||'')+(e.mei||'')),nat:e.nat,age:e.age,kit:c1,kit2:c2,size:160})):Promise.resolve(null);});
+ return Promise.all([shFonts(),shSvgImg(clubEmblem(mc,240))].concat(faces)).then(function(a){
+  var em=a[1],fimg=a.slice(2),cv=document.createElement('canvas');cv.width=W;cv.height=H;
+  var x=cv.getContext('2d');
+  /* 背景：濃い地にクラブカラーをうっすら */
+  x.fillStyle='#10151c';x.fillRect(0,0,W,H);
+  var g=x.createLinearGradient(0,0,900,900);g.addColorStop(0,shRGBA(c1,.42));g.addColorStop(1,shRGBA(c1,0));x.fillStyle=g;x.fillRect(0,0,W,H);
+  x.fillStyle=c1;x.fillRect(0,0,W,10);x.fillStyle=c2;x.fillRect(0,10,W,3);
+  /* ---- 左：結果 ---- */
+  var L=64;
+  if(em)x.drawImage(em,L,52,108,108);
+  x.fillStyle='#ffffff';x.textAlign='left';shFit(x,mc.name,520,44,26,'400',SH_FD);x.fillText(mc.name,L+130,108);
+  x.fillStyle='#aab4c0';x.font='700 24px '+SH_FB;x.fillText(seasonLabel(r.y)+'シーズン 総括',L+132,148);
+  x.fillStyle='#cfd6de';x.font='700 28px '+SH_FB;x.fillText(lgFix(TIERNAME[r.tier]),L,236);
+  x.fillStyle='#ffffff';x.font='700 200px '+SH_FN;var rk=String(r.rank),rw=x.measureText(rk).width;x.fillText(rk,L-6,408);
+  x.font='400 62px '+SH_FD;x.fillText('位',L+rw,400);var px=L+rw+x.measureText('位').width+26;
+  var up=/昇格/.test(r.fate),dn=/降格/.test(r.fate),py=330;
+  if(r.rank===1){px+=shPill(x,'優勝',px,py,'#e2b33c','#1c1606',34,SH_FD,22)+12;}
+  if(up)shPill(x,lgFix(r.fate),px,py+(r.rank===1?0:0),'#2fb36f','#06200f',34,SH_FD,22);
+  else if(dn)shPill(x,lgFix(r.fate),px,py,'#d9534f','#2a0606',34,SH_FD,22);
+  else if(r.rank!==1)shPill(x,'残留',px,py,'#4b5664','#ffffff',30,SH_FD,20);
+  x.fillStyle='#ffffff';x.font='700 34px '+SH_FB;x.fillText(r.w+'勝 '+r.d+'分 '+r.l+'敗',L,478);
+  var rw2=x.measureText(r.w+'勝 '+r.d+'分 '+r.l+'敗').width;x.font='700 34px '+SH_FB;x.fillText('勝点 '+r.pts,L+rw2+36,478);
+  x.fillStyle='#aab4c0';x.font='700 24px '+SH_FB;var gd=r.gf-r.ga;x.fillText('得点 '+r.gf+'　失点 '+r.ga+'　得失点 '+(gd>0?'+':'')+gd,L,518);
+  /* カップ戦と個人の記録 */
+  var yy=572,rows=[];
+  SH_CUP.forEach(function(c){var v=r.cup&&r.cup[c[0]];if(v&&v!=='不参加'&&v!=='-'&&v!=='不出場')rows.push([c[1],lgFix(v)]);});
+  if(lu.top)rows.push(['チーム得点王',lu.top.n+'（'+lu.top.g+'点）']);
+  rows.slice(0,4).forEach(function(rw){x.fillStyle='#8e99a6';x.font='700 21px '+SH_FB;x.fillText(rw[0],L,yy);x.fillStyle='#ffffff';shFit(x,rw[1],420,23,16,'700',SH_FB);x.fillText(rw[1],L+214,yy);yy+=34;});
+  /* 主な控え */
+  var by=Math.max(yy+18,700);
+  x.fillStyle='#8e99a6';x.font='700 21px '+SH_FB;x.fillText('主な控え',L,by);
+  x.fillStyle='rgba(255,255,255,.14)';x.fillRect(L+100,by-8,560,2);
+  lu.bench.forEach(function(e,i){
+   var cx=L+(i%2)*336,cy=by+32+Math.floor(i/2)*36,ln=POSLINE[e.pos]||'MF';
+   x.fillStyle=SH_LINE[ln];shRR(x,cx,cy-14,50,26,6);x.fill();
+   x.fillStyle='#ffffff';x.textAlign='center';x.font='700 18px '+SH_FN;x.textBaseline='middle';x.fillText(e.pos,cx+25,cy);x.textBaseline='alphabetic';x.textAlign='left';
+   shFit(x,e.n,262,22,15,'700',SH_FB);x.fillText(e.n,cx+62,cy+8);
+  });
+  /* ---- 右：基本フォーメーション ---- */
+  var PX=760,PY=108,PW=784,PH=752;
+  x.fillStyle='#aab4c0';x.font='700 22px '+SH_FB;x.fillText('基本フォーメーション',PX,86);
+  var tw=x.measureText('基本フォーメーション').width;x.fillStyle='#ffffff';x.font='700 38px '+SH_FN;x.fillText(lu.form,PX+tw+14,88);
+  if(lu.coach){x.textAlign='right';x.fillStyle='#aab4c0';x.font='700 22px '+SH_FB;x.fillText('監督　'+lu.coach,PX+PW,86);x.textAlign='left';}
+  x.save();shRR(x,PX,PY,PW,PH,20);x.clip();
+  for(var b=0;b<10;b++){x.fillStyle=b%2?'#1f7049':'#237b51';x.fillRect(PX,PY+b*PH/10,PW,PH/10+1);}
+  x.restore();
+  x.strokeStyle='rgba(255,255,255,.42)';x.lineWidth=3;
+  var iX=PX+18,iY=PY+18,iW=PW-36,iH=PH-36;x.strokeRect(iX,iY,iW,iH);
+  x.beginPath();x.moveTo(iX,iY+iH/2);x.lineTo(iX+iW,iY+iH/2);x.stroke();
+  x.beginPath();x.arc(iX+iW/2,iY+iH/2,72,0,Math.PI*2);x.stroke();
+  var bw=iW*.46,bh=iH*.15,gw=iW*.22,gh=iH*.06;
+  x.strokeRect(iX+(iW-bw)/2,iY,bw,bh);x.strokeRect(iX+(iW-gw)/2,iY,gw,gh);
+  x.strokeRect(iX+(iW-bw)/2,iY+iH-bh,bw,bh);x.strokeRect(iX+(iW-gw)/2,iY+iH-gh,gw,gh);
+  /* GKはゴール前に固定し、フィールドの10人はその上に縦方向いっぱいに広げる */
+  var slots=FORMS[lu.form].s,ys=slots.filter(function(s){return s[0]!=='GK';}).map(function(s){return s[2];}),y0=Math.min.apply(null,ys),y1=Math.max.apply(null,ys);
+  var left=PX+74,right=PX+PW-74,top=PY+64,bottom=PY+PH-82,ob=bottom-138;
+  var pos=slots.map(function(s){return [left+s[1]*(right-left),s[0]==='GK'?bottom:ob-(s[2]-y0)/Math.max(.01,y1-y0)*(ob-top)];});
+  slots.forEach(function(s,i){
+   var e=lu.xi[i];if(!e)return;
+   var cx=pos[i][0],cy=pos[i][1],mw=156;
+   /* 横に並ぶ選手とは名前がぶつからない幅に収める */
+   pos.forEach(function(q,j){if(j!==i&&Math.abs(q[1]-cy)<64)mw=Math.min(mw,Math.abs(q[0]-cx)-14);});mw=Math.max(96,mw);
+   x.fillStyle=c1;x.beginPath();x.arc(cx,cy,42,0,Math.PI*2);x.fill();
+   x.fillStyle='#ffffff';x.beginPath();x.arc(cx,cy,39,0,Math.PI*2);x.fill();
+   if(fimg[i]){x.save();x.beginPath();x.arc(cx,cy,37,0,Math.PI*2);x.clip();x.drawImage(fimg[i],cx-37,cy-37,74,74);x.restore();}
+   var ln=POSLINE[s[0]]||'MF';x.fillStyle=SH_LINE[ln];shRR(x,cx-22,cy+29,44,20,5);x.fill();
+   x.fillStyle='#ffffff';x.textAlign='center';x.textBaseline='middle';x.font='700 15px '+SH_FN;x.fillText(s[0],cx,cy+40);
+   var fs=shFit(x,e.n,mw-18,19,12,'700',SH_FB),nw=Math.min(mw,x.measureText(e.n).width+18);
+   x.fillStyle='rgba(8,12,18,.8)';shRR(x,cx-nw/2,cy+53,nw,fs+11,(fs+11)/2);x.fill();
+   x.fillStyle='#ffffff';x.font='700 '+fs+'px '+SH_FB;x.fillText(e.n,cx,cy+53+(fs+11)/2+1);
+   x.textBaseline='alphabetic';x.textAlign='left';
+  });
+  /* ---- 下端：タイトルと注意書き ---- */
+  x.fillStyle='rgba(255,255,255,.9)';x.font='400 20px '+SH_FD;x.fillText('俺のサッカークラブ',L,884);
+  var t2=x.measureText('俺のサッカークラブ').width;x.fillStyle='#7f8a97';x.font='400 14px '+SH_FB;x.fillText('※この作品はフィクションです。実在の人物・団体・リーグとは関係ありません。',L+t2+18,882);
+  return new Promise(function(res){cv.toBlob(function(bl){res(bl);},'image/png');});
+ });
+}
+
+/* ---- シェアの画面 ---- */
+function shareSheet(y){
+ var r=shareRec(y),lu=lineupOf(r);
+ if(!lu){toast('このシーズンの記録からは画像を作れません（この機能を追加する前のシーズンです）');return;}
+ UI.share={y:r.y,text:shareText(r),blob:null,file:null,noWeb:false,name:shareFileName(r)};
+ openSheet('<h2>シーズンの総括をシェア</h2><div class="shimg" id="shimg"><div class="small muted">画像を作っています…</div></div><label class="field">投稿する文章<textarea id="sh-t" rows="4">'+esc(UI.share.text)+'</textarea></label><div class="stack" id="shbtn"></div>');
+ var ta=$('sh-t');if(ta)ta.addEventListener('input',function(){UI.share.text=ta.value;var a=$('sh-x');if(a)a.href=shareIntent(ta.value);});
+ drawSeasonCard(r,lu).then(function(bl){
+  if(!UI.share||UI.share.y!==r.y)return;
+  if(!bl){var e0=$('shimg');if(e0)e0.innerHTML='<div class="small">画像を作れませんでした。</div>';return;}
+  UI.share.blob=bl;try{UI.share.file=new File([bl],UI.share.name,{type:'image/png'});}catch(e){UI.share.file=null;}
+  var el=$('shimg');if(el){var u=URL.createObjectURL(bl);el.innerHTML='<img src="'+u+'" alt="'+esc(seasonLabel(r.y))+'シーズンの総括画像">';}
+  shareBtns();
+ },function(){var e1=$('shimg');if(e1)e1.innerHTML='<div class="small">画像を作れませんでした。</div>';});
+}
+function canShareFile(){var f=UI.share&&UI.share.file;try{return !!(f&&!UI.share.noWeb&&navigator.canShare&&navigator.canShare({files:[f]}));}catch(e){return false;}}
+function shareBtns(){
+ var el=$('shbtn');if(!el||!UI.share)return;
+ if(canShareFile())el.innerHTML='<button class="btn pri wide" data-act="shareX">'+ic('share')+'Xに投稿する（画像つき）</button><button class="btn wide" data-act="shareSave">'+ic('download')+'画像を保存</button><div class="small muted">共有メニューからXを選ぶと、画像と文章の入った投稿画面が開きます。</div>';
+ else el.innerHTML='<button class="btn pri wide" data-act="shareSave">'+ic('download')+'① 画像を保存</button><a class="btn wide" id="sh-x" href="'+esc(shareIntent(UI.share.text))+'" target="_blank" rel="noopener">'+ic('share')+'② Xの投稿画面を開く</a><div class="small muted">文章の入った投稿画面が開きます。①で保存した画像を添付して投稿してください。</div>';
+}
+/* 共有メニューで画像と文章をXに渡す（ボタンを押した流れのまま呼ぶ必要がある） */
+function shareX(){
+ var s=UI.share;if(!s||!s.file)return;var ta=$('sh-t');if(ta)s.text=ta.value;
+ try{
+  navigator.share({files:[s.file],text:s.text}).then(function(){toast('共有メニューに渡しました');},function(e){
+   if(e&&e.name==='AbortError')return;
+   s.noWeb=true;shareBtns();toast('この画面では共有メニューが使えません。画像を保存してから投稿してください');
+  });
+ }catch(e){s.noWeb=true;shareBtns();}
+}
+/* 画像を保存：Claudeの中ではダウンロード機能（確認が出る）、単独のページではそのままダウンロード */
+function shareSave(){
+ var s=UI.share;if(!s||!s.blob)return;
+ var C=window.claude;
+ function direct(){try{var u=URL.createObjectURL(s.blob),a=document.createElement('a');a.href=u;a.download=s.name;document.body.appendChild(a);a.click();setTimeout(function(){URL.revokeObjectURL(u);a.remove();},4000);toast('画像を保存しました');}catch(e){toast('この画面では画像を保存できません。画像を長押しして保存してください');}}
+ if(C&&typeof C.use==='function'){
+  C.use('downloads').then(function(dl){
+   if(!dl){direct();return;}
+   dl.save({filename:s.name,data:s.blob}).then(function(){toast('画像を保存しました');},function(e){var c=e&&e.code;if(c==='declined')toast('保存をやめました');else if(c==='rate_limited')toast('少し待ってから、もう一度お試しください');else direct();});
+  },direct);
+  return;
+ }
+ direct();
+}
 
 })();
 </script>
