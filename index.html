@@ -3811,6 +3811,31 @@ var NEG_CARDS={
  cash:{n:'一括で支払う',d:'移籍金を分割せずに支払う',w:{_:.5}},
  bond:{n:'今後もいい関係を',d:'将来の選手のやり取りも含めた関係づくりを提案する',w:{_:.4}}
 };
+/* 監督との交渉では、説得の言葉も監督向けにする（選手に向ける「君」「プレー」などは使わない） */
+var NEG_CARDS_C={
+ need:{n:'あなたに任せたい',d:'チームの強化をこの人に託したいと伝える'},
+ vision:{n:'将来像を語る',d:'クラブの目標と、そのために整える環境を伝える'},
+ long:{n:'腰を据えてほしい',d:'複数年契約で、長く指揮を任せる意思を示す'}
+};
+function isCoachN(N){return N.kind==='coach'||N.kind==='coachx';}
+function negCardDef(N,k){var C=NEG_CARDS[k],O=isCoachN(N)&&NEG_CARDS_C[k];return O?{n:O.n,d:O.d,w:C.w}:C;}
+function coachCardLine(N,k){
+ var x=N.kind==='coachx',top=myClub().tier==='J1';
+ return pick({
+  need:x?['ここまで作ってきたチームを、引き続き率いていただきたい。','このチームは、もうあなたのチームです。続投をお願いしたい。','選手たちも、あなたの指導を続けて受けたいと言っています。']
+   :['ぜひ、あなたにこのチームを任せたいんです。','チームを変えられるのは、あなたしかいないと考えています。','選手たちに、あなたの指導を受けさせたいんです。'],
+  vision:top?['クラブは本気でタイトルを狙っています。その先頭に立っていただきたい。','いずれはアジアの舞台で戦うクラブにします。その指揮をお願いしたい。','練習環境もスタッフも、監督の要望に応えて整えていきます。']
+   :['クラブは本気で上のカテゴリを目指しています。その指揮を執っていただきたい。','練習環境もスタッフも、監督の要望に応えて整えていきます。','数年後に上で戦うクラブの土台を、一緒に作っていただきたい。'],
+  long:['目先の結果だけで判断はしません。腰を据えてチームを作ってください。','長期的な視点で、クラブの形を作っていただきたい。','長く指揮を執っていただくつもりでお願いしています。']
+ }[k]||['ぜひ、よろしくお願いします。']);
+}
+function coachCardOk(k){return pick({need:['そこまで信頼していただけるなら、条件は少し考えます。','その言葉、意気に感じます。','そう言われては、断りにくいですね。'],vision:['クラブの本気度はよくわかりました。','その環境なら、思い切った仕事ができそうです。','目指すところが同じなら、条件は少し譲りましょう。'],long:['長い目で見てもらえるのはありがたい。','腰を据えてやれるなら、条件は少し考えます。','じっくりチームを作れるなら、それが一番です。']}[k]||['わかりました。']);}
+function coachOfferLine(N,sal,yrs){
+ var s='年俸'+money(sal)+'、'+yrs+'年';
+ return N.round>0?pick(['条件を見直しました。'+s+'でいかがでしょう。','では、'+s+'ではどうでしょうか。','精一杯の数字です。'+s+'でお願いできませんか。'])
+  :N.kind==='coachx'?pick(['続投の条件として、'+s+'を考えています。','引き続き、'+s+'でお願いできないでしょうか。','クラブからの提示は'+s+'です。'])
+  :pick([s+'でお願いできないでしょうか。','こちらからは、'+s+'の契約をお願いしたいと考えています。','クラブからの提示は'+s+'です。ぜひ指揮をお願いしたい。']);
+}
 var _nid=1;
 function directorName(){var n=jpName();return n.sei+'強化部長';}
 function negLine(N,who,text){N.log.push({who:who,text:text,st:N.stage});}
@@ -3973,7 +3998,8 @@ function negSubmit(N,o){
   if(isC&&sal>coachCap()){negLine(N,'sys','経営陣の承認が下りません（監督の年俸は年'+money(coachCap())+'まで）');return N;}
   var add=N.kind==='renew'?sal-N.p.sal:isC||N.kind==='rookie'?0:sal;
   if(add>0&&!budgetOK(add)){negLine(N,'sys','経営陣：その年俸だと人件費の上限を超えます（残り'+money(budgetRoom())+'）');return N;}
-  negLine(N,'gm',N.round>0?pick(['では、年俸'+money(sal)+'、'+yrs+'年でどうだろう。','条件を見直した。年俸'+money(sal)+'、'+yrs+'年だ。','これでどうだ。年俸'+money(sal)+'、'+yrs+'年。']):pick(['年俸'+money(sal)+'、'+yrs+'年でどうだろう。','こちらの提示は年俸'+money(sal)+'、'+yrs+'年だ。','年俸'+money(sal)+'で、'+yrs+'年契約を考えている。']));
+  if(isC)negLine(N,'gm',coachOfferLine(N,sal,yrs));
+  else negLine(N,'gm',N.round>0?pick(['では、年俸'+money(sal)+'、'+yrs+'年でどうだろう。','条件を見直した。年俸'+money(sal)+'、'+yrs+'年だ。','これでどうだ。年俸'+money(sal)+'、'+yrs+'年。']):pick(['年俸'+money(sal)+'、'+yrs+'年でどうだろう。','こちらの提示は年俸'+money(sal)+'、'+yrs+'年だ。','年俸'+money(sal)+'で、'+yrs+'年契約を考えている。']));
  }else{negLine(N,'gm',pick(['よろしく頼む。出場機会は約束する。','歓迎するよ。試合でどんどん使うつもりだ。']));return negClose(N,true);}
  var val=sal*(1-.04*Math.abs(yrs-N.yrsPref)*(N.pers==='stable'||N.pers==='money'?1.5:1));
  var g2=val/N.want;
@@ -4001,11 +4027,13 @@ function negCard(N,k){
  if(k==='vision'){var rk=rankOf(S.me),n=S.lg[mc.tier].ids.length;if(rk<=n/3)pr+=.15;if(N.p&&N.p.club&&S.clubs[N.p.club]&&tierIdx(S.clubs[N.p.club])<tierIdx(mc))pr-=.2;}
  if(k==='play'&&N.p){var xi=pickXI(mc,roster(mc),1,FOREIGN_LIMIT[mc.tier]),lo=Math.min.apply(null,xi.filter(function(p){return p&&!p.ghost&&POSLINE[p.pos]===POSLINE[N.p.pos];}).map(ovr).concat([99]));if(ovr(N.p)<lo-4)pr-=.25;}
  if(k==='long'&&N.p&&N.p.age>=30)pr+=.15;
- negLine(N,'gm',pick({need:['君の力がどうしても必要なんだ。','このチームに足りないピースは、君なんだ。','監督も君を名指しで欲しがっている。'],vision:mc.tier==='J1'?['うちは本気でタイトルを狙っている。一緒に戦ってほしい。','数年後にはアジアの舞台で戦うクラブにする。その中心にいてほしい。','スタジアムも練習環境も、これから良くしていく。']:['うちは本気で上を目指している。一緒に戦ってほしい。','数年後には上のカテゴリにいる。その中心にいてほしい。','スタジアムも練習環境も、これから良くしていく。'],play:['主力として使う。それは約束する。','開幕から君を軸にチームを組む。','出場機会は保証する。監督とも話してある。'],long:['腰を据えて、長くプレーしてほしい。','君にはこのクラブの顔になってほしい。','数年先まで見据えた話をしたい。'],cash:['移籍金は一括で支払います。','支払いは契約と同時に全額済ませます。'],bond:['今後もいい関係を築いていきたい。','今後、そちらの若手を預かる話もできると思う。']}[k]));
+ if(isCoachN(N))negLine(N,'gm',coachCardLine(N,k));
+ else negLine(N,'gm',pick({need:['君の力がどうしても必要なんだ。','このチームに足りないピースは、君なんだ。','監督も君を名指しで欲しがっている。'],vision:mc.tier==='J1'?['うちは本気でタイトルを狙っている。一緒に戦ってほしい。','数年後にはアジアの舞台で戦うクラブにする。その中心にいてほしい。','スタジアムも練習環境も、これから良くしていく。']:['うちは本気で上を目指している。一緒に戦ってほしい。','数年後には上のカテゴリにいる。その中心にいてほしい。','スタジアムも練習環境も、これから良くしていく。'],play:['主力として使う。それは約束する。','開幕から君を軸にチームを組む。','出場機会は保証する。監督とも話してある。'],long:['腰を据えて、長くプレーしてほしい。','君にはこのクラブの顔になってほしい。','数年先まで見据えた話をしたい。'],cash:['移籍金は一括で支払います。','支払いは契約と同時に全額済ませます。'],bond:['今後もいい関係を築いていきたい。','今後、そちらの若手を預かる話もできると思う。']}[k]));
  var ok=rnd()<clamp(pr,.05,.95);
  if(N.stage==='club'&&N.kind==='buy'){if(ok){N.ask*=k==='cash'?.95:.96;negLine(N,'them',pick(['……そういうことなら、少し歩み寄りましょう。','それは助かります。こちらも少し譲りましょう。','なるほど。では条件を見直します。']));}else negLine(N,'them',pick(['ありがたい話ですが、金額は金額です。','それとこれとは別の話です。','気持ちはわかりますが、評価額は変わりません。']));return N;}
  if(ok){N.want*=k==='long'?.95:.93;if(k==='long')N.yrsPref=3;if(k==='play'&&N.p)N.p.promise=S.year;
-  negLine(N,'them',pick({need:['……そこまで言ってもらえるなら、少し考え直します。','そんなふうに言ってもらえたのは初めてです。','必要とされるのは、やっぱりうれしいです。'],vision:['その話を聞いて、気持ちが動きました。','本気なんですね。一緒に上を目指したくなりました。','クラブの目指す形が見えて、安心しました。'],play:['それなら条件は少し譲ってもいいです。','試合に出られるなら、それが一番です。','その約束、信じます。'],long:['長く必要としてもらえるのは、うれしいです。','腰を据えられるなら、条件は少し考えます。','ここで長くやる自分が想像できました。']}[k]));}
+  if(isCoachN(N))negLine(N,'them',coachCardOk(k));
+  else negLine(N,'them',pick({need:['……そこまで言ってもらえるなら、少し考え直します。','そんなふうに言ってもらえたのは初めてです。','必要とされるのは、やっぱりうれしいです。'],vision:['その話を聞いて、気持ちが動きました。','本気なんですね。一緒に上を目指したくなりました。','クラブの目指す形が見えて、安心しました。'],play:['それなら条件は少し譲ってもいいです。','試合に出られるなら、それが一番です。','その約束、信じます。'],long:['長く必要としてもらえるのは、うれしいです。','腰を据えられるなら、条件は少し考えます。','ここで長くやる自分が想像できました。']}[k]));}
  else negLine(N,'them',pick({money:['気持ちはうれしいですが、条件は条件です。','言葉より、数字で見せてください。'],loyal:['ありがたいですが、それとこれとは別です。','お気持ちは受け取りました。でも、それだけでは。'],ambition:['言葉だけでは、なんとも。','結果で示してもらえれば信じますよ。'],stable:['うーん、それより契約の中身ですね。','約束より、契約書に書いてあることが大事です。'],easy:['なるほど。でも条件は変わりませんね。','あはは、うまいこと言いますね。でも条件は別です。']}[N.pers]||['条件は変わりません。']));
  return N;
 }
@@ -6139,7 +6167,7 @@ function renderNegPanel(){
   h+='<div class="nvy"><small>契約年数</small><div class="seg">'+[1,2,3,4].slice(0,ymax).map(function(y){return '<button class="chip'+(UI.nv.yrs===y?' on':'')+'" data-act="nvYrs" data-v="'+y+'">'+y+'年</button>';}).join('')+'</div></div>';
   cards=isC?['need','vision','long']:N.kind==='rookie'?['play','vision','need']:N.kind==='renew'?['need','vision','play','long']:['vision','play','long','need'];
  }
- if(cards.length){var left=2-Object.keys(N.used).length;h+='<div class="cards"><span class="cl">説得<b class="num">'+Math.max(0,left)+'</b></span>'+cards.map(function(k){var C=NEG_CARDS[k];return '<button data-act="negCard" data-k="'+k+'"'+(N.used[k]||left<=0?' disabled':'')+'>'+ic(NEG_CARD_IC[k]||'chat')+'<span><b>'+C.n+'</b><small>'+C.d+'</small></span></button>';}).join('')+'</div>';}
+ if(cards.length){var left=2-Object.keys(N.used).length;h+='<div class="cards"><span class="cl">説得<b class="num">'+Math.max(0,left)+'</b></span>'+cards.map(function(k){var C=negCardDef(N,k);return '<button data-act="negCard" data-k="'+k+'"'+(N.used[k]||left<=0?' disabled':'')+'>'+ic(NEG_CARD_IC[k]||'chat')+'<span><b>'+C.n+'</b><small>'+C.d+'</small></span></button>';}).join('')+'</div>';}
  h+='<button class="btn pri wide" data-act="negGo">'+ic('chat')+'この条件で提示する</button>';
  el.innerHTML=h;
 }
