@@ -51,6 +51,8 @@ body{overflow:hidden;overscroll-behavior:none}
 #title-screen{position:fixed;inset:0;overflow-y:auto;overscroll-behavior:contain}
 body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:14px;line-height:1.55;-webkit-text-size-adjust:100%}
 button,select,input,textarea{font:inherit;color:inherit}
+/* スマホ：ボタンの連打でダブルタップのズームが起きないようにする（2本指で広げる拡大はそのまま使える） */
+*{touch-action:manipulation}
 button{cursor:pointer}
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .num{font-family:var(--f-num);font-variant-numeric:tabular-nums}
@@ -689,6 +691,8 @@ a.btn{text-decoration:none;color:inherit}
 .news div.i span:last-child{font-weight:700}
 .statbar{display:flex;gap:6px;flex-wrap:wrap}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+/* iPhoneは16px未満の入力欄を触ると自動で拡大するので、タッチ操作の端末では16pxにする */
+@media (pointer:coarse){.field input,.field select,textarea,.stepper input{font-size:16px}}
 </style>
 
 <div id="title-screen" class="title" hidden><div class="tbg" id="title-bg" aria-hidden="true"></div><div class="wrap stack" id="title-body"></div></div>
