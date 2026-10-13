@@ -675,6 +675,12 @@ body.running .dock .btn.on{background:var(--club);color:var(--club-ink);border-c
 a.btn{text-decoration:none;color:inherit}
 .optbox{border:1px solid var(--line);border-radius:10px;padding:8px 10px;background:var(--surface2);display:flex;flex-direction:column;gap:2px}
 .chip[disabled]{opacity:.45}
+.trow{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.tchip{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--line);background:var(--surface2);border-radius:999px;padding:3px 4px 3px 4px;font-size:13px;font-weight:700}
+.tchip small{font-weight:400;color:var(--muted);font-size:11px}.tchip .ib.sm{width:22px;height:22px;min-width:0;padding:0;font-size:13px;line-height:1}
+.mreq{display:flex;gap:8px;align-items:center;margin-top:4px}.mreq i{font-style:normal;font-size:11px}.mreq .pill{font-size:11px;padding:1px 8px}
+.mdots{display:inline-flex;gap:3px;vertical-align:-1px}.mdot{width:9px;height:9px;border-radius:50%;border:1.5px solid var(--muted);display:inline-block}.mdot.on{background:var(--acc,var(--good));border-color:var(--acc,var(--good))}
+.mpts{font-weight:700}
 .mopts2{display:grid;grid-template-columns:1fr 1fr;gap:6px}
 .mopt.sm{padding:8px 10px;border-radius:10px}.mopt.sm b{font-size:13px;line-height:1.35}.mopt.sm span{font-size:11px;line-height:1.4}
 #mpanel{max-height:62vh;overflow-y:auto}
@@ -2476,6 +2482,7 @@ function finalizeSeason(){
  S.moves=mv;
  /* 賞金・配分（自クラブ） */
  var pz=LEAGUE_PRIZE[myT][rank-1];if(pz)prize(pz,TIERNAME[myT]+' '+rank+'位 賞金');
+ xferBonusCheck();
  /* 個人賞 */
  var awards={};
  TIERS.forEach(function(t){
@@ -2627,7 +2634,7 @@ function attendance(h,a,comp){
  var base=h.fan*formFactor(h);
  var r=rankOf(h.id),n=S.lg[h.tier].ids.length;base*=1.08-.16*(r-1)/(n-1);
  if(a&&!a.ghost)base*=1+clamp((a.fan-h.fan)/h.fan,0,1.5)*.18;
- base*=Math.pow(price,-.75)*(1+HOMETOWN_LV[S.fin.hometown].g);
+ base*=Math.pow(price,-.75)*(1+HOMETOWN_LV[S.fin.hometown].g)*(h.id===S.me&&promoAidOn()?1.05:1);
  /* 開幕戦・ホーム最終戦・終盤の上位争いは観客が増える */
  if(comp==='lg'){
   if(!h.att.n)base*=1.35;
@@ -2721,8 +2728,8 @@ function facAidOf(cost){var left=facAidLeft();return left?Math.min(Math.round(co
 function spendFacAid(raw,paid){var a=S.board.facAid,x=raw-paid;if(!a||x<=0)return;a.left=a.once?0:Math.max(0,a.left-x);addNews('経営陣が工事費のうち'+money(x)+'を負担しました',1);}
 function reserveCash(E){return Math.round((E==null?expectedRevenue():E)*.1/100)*100;}
 function payCapParts(withOffers){
- var E=expectedRevenue(!!withOffers),fx=fixedCostEst(),pm=planMult(),sus=Math.max(0,Math.min(E*.62,E-fx))*pm.s,res=reserveCash(E),sur=Math.max(0,S.fin.cash-res)*pm.c,boost=S.board.boost||0;
- return {E:E,fixed:fx,sus:sus,res:res,sur:sur,share:pm.c,boost:boost,cap:Math.max(MIN_SAL[myClub().tier]*20,Math.round((sus+sur+boost)/10)*10)};
+ var E=expectedRevenue(!!withOffers),fx=fixedCostEst(),pm=planMult(),sus=Math.max(0,Math.min(E*.62,E-fx))*pm.s,res=reserveCash(E),sur=Math.max(0,S.fin.cash-res)*pm.c,debt=(S.board.debtQ||{})[S.year]||0,boost=(S.board.boost||0)-debt;
+ return {E:E,fixed:fx,sus:sus,res:res,sur:sur,share:pm.c,boost:boost+debt,debt:debt,cap:Math.max(MIN_SAL[myClub().tier]*20,Math.round((sus+sur+boost)/10)*10)};
 }
 function payCap(){return payCapParts().cap;}
 /* 今季1年分の収支見込み（ここまでの実績＋残りの見込み）。円グラフ用に「選手年俸・監督年俸・固定費・投資」と余剰（または不足）に分ける */
@@ -2774,7 +2781,10 @@ function seasonStartTasks(){
  if(plan==='safe'){if(tgt.promo){tgt={t:'6位以内',rank:6,promo:false};}else{tgt.rank=Math.min(n-3,tgt.rank+3);tgt.t=tgt.rank+'位以内';}}
  if(plan==='youth'){if(tgt.promo||tgt.title){tgt={t:'上位争い（4位以内）',rank:4,promo:false};}else{tgt.rank=Math.min(n-3,tgt.rank+2);tgt.t=tgt.rank+'位以内';}}
  S.board.target=tgt;
- S.board.budget=null;S.board.extra=0;S.board.boost=0;S.board.bLog=null;
+ S.board.budget=null;S.board.extra=0;S.board.bLog=null;
+ /* 期末の面談で認められた上積み（前借り）をこの季に反映し、古い記録を片づける */
+ var bq=S.board.boostQ||{},dq=S.board.debtQ||{};S.board.boost=bq[S.year]||0;
+ Object.keys(bq).forEach(function(y){if(+y<S.year)delete bq[y];});Object.keys(dq).forEach(function(y){if(+y<S.year)delete dq[y];});
  capSeasonStart();
  var extra='';
  if(plan==='youth'){var nd=youthNeed();S.board.youth={y:S.year,u0:0,t0:0,need:nd,full:1};if(!mc.policy.youth)mc.policy.youth=1;extra='若手育成の方針により、リーグ戦でのU-23の選手の出場時間を'+Math.round(nd*100)+'%以上にすることを約束しています（クラブの方針「若手の起用」を「若手を優先」にしました）。';}
@@ -3321,6 +3331,24 @@ function offersForMine(){
   inbox({type:'offer',kind:'sell',pid:p.id,buyer:b.id,fee:fee,exp:S.day+10,title:b.short+'から'+pname(p)+'への獲得オファー',body:'移籍金'+money(fee)+'の提示です（'+fmtD(S.day+10)+'まで）'});
  });
 }
+/* 獲得時に「売却時の分配」をつけた選手を売ったら、元のクラブに分配する */
+function paySellOn(p,fee){var s=p.sellon;if(!s)return;var c=S.clubs[s.c],pay=Math.round(fee*s.r/10)*10;delete p.sellon;if(!c||pay<=0)return;ledger('exp','trans',pay);c.money=(c.money||0)+pay;addNews(pname(p)+'の売却時の分配として、'+c.short+'に'+money(pay)+'を支払いました',1);}
+/* 出来高払い：リーグ戦の出場が条件に届いたら、元のクラブに追加の移籍金を払う（シーズン終了時に確認） */
+function xferBonusCheck(){
+ roster(myClub()).forEach(function(p){var x=p.xb;if(!x)return;
+  if(p.st.ap>=x.need){var c=S.clubs[x.c];delete p.xb;if(c){ledger('exp','trans',x.amt);c.money=(c.money||0)+x.amt;addNews(pname(p)+'がリーグ戦'+x.need+'試合に出場。出来高として'+c.short+'に'+money(x.amt)+'を支払いました',1);}}
+  else if(S.year>=x.y)delete p.xb;});
+}
+/* 買い戻し条項：期限内に選手の価値が大きく上がると、元のクラブが買い戻しを行使する（6月30日） */
+function buybackCheck(){
+ roster(myClub()).forEach(function(p){var b=p.bb;if(!b)return;
+  var c=S.clubs[b.c];
+  if(c&&c.id!==S.me&&S.year<=b.until&&valueOf(p)>=b.price*1.1&&(c.money||0)>=b.price*.8&&rnd()<.6){
+   delete p.bb;ledger('rev','trans',b.price);c.money=(c.money||0)-b.price;leaveClub(p);joinClub(p,c,ri(2,4),Math.max(p.sal,marketSal(p,c.tier)));markMoved(p);
+   addNews(c.short+'が買い戻し条項を行使し、'+pname(p)+'が復帰（移籍金'+money(b.price)+'を受け取りました）',1);
+   inbox({type:'info',title:pname(p)+'が買い戻されました',body:c.name+'が買い戻し条項を行使しました。'+pname(p)+'は'+c.short+'へ戻り、移籍金'+money(b.price)+'を受け取りました。'});
+  }else if(S.year>=b.until)delete p.bb;});
+}
 function respondOffer(mid,accept){
  var m=S.inbox.filter(function(x){return x.id===mid;})[0];if(!m||m.done)return {ok:false,msg:'すでに処理済みです'};
  if(!accept){m.done='断った';return {ok:true,msg:'オファーを断りました'};}
@@ -3328,7 +3356,7 @@ function respondOffer(mid,accept){
  if(!p||p.club!==S.me){m.done='無効';return {ok:false,msg:'その選手はもう在籍していません'};}
  if(!S.window){m.done='無効';return {ok:false,msg:'移籍期間が終わっています'};}
  if(m.kind==='loan'){if(m.opt){ledger('rev','trans',m.opt.fee);b.money=(b.money||0)-m.opt.fee;}doLoanOut(p,b,m.share,m.opt);m.done='受け入れた';return {ok:true,msg:pname(p)+'が'+b.short+'へレンタル移籍します（今季終了まで'+(m.opt?'・レンタル料'+money(m.opt.fee)+'を受け取りました':'')+'）'};}
- ledger('rev','trans',m.fee);b.money=(b.money||0)-m.fee;leaveClub(p);joinClub(p,b,ri(2,4));p.list=0;markMoved(p);
+ ledger('rev','trans',m.fee);b.money=(b.money||0)-m.fee;paySellOn(p,m.fee);leaveClub(p);joinClub(p,b,ri(2,4));p.list=0;markMoved(p);
  m.done='受け入れた';
  addNews(pname(p)+'が'+b.short+'へ完全移籍（移籍金'+money(m.fee)+'）',1);
  return {ok:true,msg:pname(p)+'の移籍が成立しました'};
@@ -3458,7 +3486,10 @@ function coachSal(c){return Math.round(Math.max(coachPayAt(c,myClub().tier),coac
 /* 格上の監督ほど、来てもらうには上乗せが必要 */
 function coachNeed(c){var gap=coachQ(c)-clubLevel(myClub())-(myClub().rep-25)/8;return 1+Math.max(0,gap-8)*.03;}
 /* 経営陣が認める監督年俸の上限（選手人件費の上限の3割。返事待ちのスポンサー提案も見込みに入れる） */
-function coachCap(){return Math.max(400,Math.round(payCapParts(true).cap*.3/10)*10);}
+function coachCap(){var c=S.board.coachUp,up=c&&c.y===S.year?1.3:1;return Math.max(400,Math.round(payCapParts(true).cap*.3*up/10)*10);}
+/* 経営陣による移籍金の一部負担（社長への相談で認められた季の登録期間） */
+function xferAidLeft(){var a=S.board.xferAid;return a&&a.y===S.year&&a.left>0?a.left:0;}
+function xferAidOf(fee){var l=xferAidLeft();return l?Math.min(Math.round(fee*S.board.xferAid.r/10)*10,l):0;}
 function coachAsk(c){return Math.round(coachSal(c)*coachNeed(c)/10)*10;}
 function offerCoach(cid,sal,yrs,agreed){
  var mc=myClub(),i=-1;S.coachPool.forEach(function(c,j){if(c.id===cid)i=j;});
@@ -3513,11 +3544,12 @@ function aiCoachChange(){
 
 /* ---------- 契約満了・加齢・引退・AIの補強 ---------- */
 function contractsExpire(){
+ buybackCheck();
  var mc=myClub(),leaving=[];
  S.inbox.forEach(function(m){if(m.kind==='opt'&&!m.done)m.done='期限切れ（行使せず）';});
  for(var id in S.P){
   var p=S.P[id];if(p.ghost||p.prospect)continue;
-  if(p.loan&&p.loan.opt&&p.loan.from===S.me&&p.loan.opt.ai&&S.clubs[p.club]){var bt=S.clubs[p.club],opr=p.loan.opt.price;ledger('rev','trans',opr);bt.money=(bt.money||0)-opr;p.loan=null;p.yrs=ri(2,3);p.sal=Math.max(p.sal,marketSal(p,bt.tier));markMoved(p);addNews(bt.short+'が'+pname(p)+'の買取オプションを行使。完全移籍となり、移籍金'+money(opr)+'を受け取りました',1);continue;}
+  if(p.loan&&p.loan.opt&&p.loan.from===S.me&&p.loan.opt.ai&&S.clubs[p.club]){var bt=S.clubs[p.club],opr=p.loan.opt.price;ledger('rev','trans',opr);paySellOn(p,opr);bt.money=(bt.money||0)-opr;p.loan=null;p.yrs=ri(2,3);p.sal=Math.max(p.sal,marketSal(p,bt.tier));markMoved(p);addNews(bt.short+'が'+pname(p)+'の買取オプションを行使。完全移籍となり、移籍金'+money(opr)+'を受け取りました',1);continue;}
   if(p.loan){var back=S.clubs[p.loan.from];leaveClub(p);if(back){p.club=back.id;back.pl.push(p.id);}p.loan=null;if(back&&back.id===S.me)addNews(pname(p)+'がレンタル先から復帰');continue;}
   if(!p.club)continue;
   p.yrs--;p.renewNo=0;p.renewed=0;p.renewBlock=0;p.renewHard=0;p.loanList=0;
@@ -3669,7 +3701,7 @@ function meetStart(){
   var rk=rankOf(S.me),lt=S.lg[mc.tier].tbl[S.me];
   L('いま'+TIERNAME[mc.tier]+'で'+rk+'位（'+lt.w+'勝'+lt.d+'分'+lt.l+'敗）。'+(rk===1?'首位での折り返しです。':'')+(t?'目標の「'+t.t+'」には'+{good:'順調に届いています。',near:'もう少しで手が届く位置です。',far:'まだ距離がありますね。'}[st]:''));
   L(finLine());
-  L('GMから、何か相談はありますか？');
+  L('まずは目標について、GMの考えを聞かせてください。');
  }else{
   var h=S.hist[S.hist.length-1],nt=nextTierOf();
   endTalk(h,nt).forEach(L);
@@ -3730,32 +3762,111 @@ function endTalk(h,nt){
  out.push('来季は'+TIERNAME[nt]+(acl?'、そしてアジアクラブ選手権にも挑みます':'')+'。'+T.why+'クラブとしては「'+T.t+'」を目標にしたいと考えています。GMの考えを聞かせてください。');
  return out;
 }
+/* ---------- 面談の進め方 ----------
+ * ①目標のすり合わせ：期中は「このまま目指す／結果で応えると約束／目標を見直す／若手育成の約束」、期末は来季の目標の方針。
+ * ②社長へのお願い：「相談できる余地」（1〜4）の範囲で、いくつでもお願いできる。余地は信頼度と成績で決まり、
+ *   断られても使った余地は戻らない。補強資金の上積みは余地を2つ使い、通っても「前借り」として翌シーズンの上限から半分を差し引く */
+function meetPtsCalc(M){
+ var tr=S.board.trust,p=1+(tr>=55?1:0)+(tr>=75?1:0);
+ if(M.k==='mid')p+=M.st==='good'?1:M.st==='far'?-1:0;
+ else{var h=S.hist[S.hist.length-1],d=h&&h.trustD||0;p+=d>=20?2:d>=8?1:d<0?-1:0;}
+ return clamp(p,1,4);
+}
+/* お願いの通りやすさ（0〜1） */
+function reqChance(k,M){
+ var tr=S.board.trust,ot=ownerT(),st=M.k==='mid'?M.st:((S.hist[S.hist.length-1]||{}).trustD>=8?'good':(S.hist[S.hist.length-1]||{}).trustD<0?'far':'near');
+ var sb=st==='good'?.1:st==='far'?-.12:0,cash=S.fin.cash,pj=seasonProjection(),rich=cash>payCap()*.3?.1:cash<0||pj.end<0?-.3:0;
+ return clamp({
+  money:.18+ot.ask+(tr-50)/110+sb+rich,
+  sponsor:.5+ot.ask*.5+(tr-50)/160+sb*.5,
+  promo:.45+ot.ask+(tr-50)/150+sb+(cash<0?-.25:0),
+  facility:.32+ot.ask+(tr-50)/120+sb+rich*.6,
+  xfer:.22+ot.ask+(tr-50)/110+sb+rich,
+  coach:.45+ot.ask*.5+(tr-50)/130+sb
+ }[k]||.3,.05,.9);
+}
+function chanceLabel(p){return p>=.6?'通りやすい':p>=.35?'五分五分':'通りにくい';}
+function spFreeSlot(){var taken={};S.sponsors.concat(S.sponOffers).forEach(function(s){taken[s.slot]=1;});return SPON_SLOTS.filter(function(s){return !taken[s.k];}).sort(function(a,b){return b.base-a.base;})[0]||null;}
+function reqList(M){
+ var mid=M.k==='mid',b=S.board,a=M.asked||{},L=[];
+ function add(k,c,t,d){if(!a[k])L.push({k:k,c:c,t:t,d:d,p:reqChance(k,M)});}
+ var cap=payCap();
+ add('money',2,mid?'補強資金を上積みしてほしい':'来季の補強資金を上積みしてほしい',(mid?'今季':'来季')+'の人件費の上限を'+money(Math.round(clamp(S.fin.cash*.2,cap*.05,cap*.15)/100)*100)+'前後上積みしてもらう。前借りなので、その翌シーズンの上限から半分を差し引く');
+ if(spFreeSlot())add('sponsor',1,'スポンサーを紹介してほしい','親会社・経営陣の取引先を紹介してもらう。空いている枠（'+spFreeSlot().n+'）に、相場より3割ほど高い提案が届く');
+ if(!(mid&&promoAidOn()))add('promo',1,'集客を後押ししてほしい',(mid?'今季':'来季')+'のあいだ、経営陣主導のPRでファン層の伸びが上向き、ホームの観客も5%ほど増える');
+ if(!facAidLeft())add('facility',1,'施設投資を支援してほしい',(mid?'今季の次の工事1回について、費用の4割':'来季の施設・スタジアムの工事について、費用の3割')+'を経営陣が負担する（上限あり）');
+ add('xfer',2,'移籍金を一部負担してほしい',(mid?'冬':'夏')+'の登録期間に獲得する選手の移籍金について、3割を経営陣が負担する（上限あり）');
+ add('coach',1,'監督の年俸の枠を広げてほしい',(mid?'今季':'来季')+'、監督に払える年俸の上限を3割引き上げてもらう（よりよい監督を招きやすくなる）');
+ return L;
+}
 function meetOpts(){
  var M=S.meet;if(!M||M.done)return [];
+ if(M.phase==='req'){
+  return reqList(M).filter(function(o){return o.c<=M.pts;}).map(function(o){return {k:o.k,x:1,req:1,c:o.c,p:o.p,t:o.t,s:o.d,d:o.d};}).concat([{k:'finish',fin:1,t:'相談は以上です',d:'面談を終える'}]);
+ }
  if(M.k==='mid'){
-  var o=[{k:'money',t:'補強資金を上積みしてほしい',d:'冬の補強に向けて、人件費の上限の上積みをお願いする（今季のみ）'},{k:'pledge',t:'このまま任せてほしい',d:'結果で応えると約束する（守れなければ評価が下がる）'}];
-  if(M.st==='far')o.splice(1,0,{k:'lower',t:'目標を見直させてほしい',d:'現実的な目標に下げてもらう（信頼は下がる）'});
-  if(!youthOn()&&u23Frac()>=.1)o.push({k:'youth',x:1,s:'U-23の出場時間'+Math.round(youthNeed()*100)+'%以上を約束',t:'若手の育成に時間をください',d:'後半戦はリーグ戦でのU-23の出場時間を'+Math.round(youthNeed()*100)+'%以上にすると約束する。守れば評価が上がり、守れなければ下がる'});
-  if(!promoAidOn())o.push({k:'promo',x:1,s:'通ればファン層の伸びが上向く',t:'集客を後押ししてほしい',d:'親会社・クラブ主導のプロモーションをお願いする。通れば今季のあいだファン層の伸びが上向く'});
-  if(!facAidLeft())o.push({k:'facility',x:1,s:'通れば次の工事費の4割を負担',t:'施設への投資を相談したい',d:'練習場・アカデミー・スタジアムなどの次の工事1回について、費用の4割を経営陣に負担してもらう'});
+  var o=[{k:'keep',t:'このまま目標を目指します',d:'目標はそのまま。特に約束はしない'},{k:'pledge',t:'結果で応えると約束します',d:'目標を守ると約束する（達成で評価が上がり、守れなければ下がる）'}];
+  if(M.st==='far')o.push({k:'lower',t:'目標を見直させてほしい',d:'現実的な目標に下げてもらう（信頼は下がる）'});
+  if(!youthOn()&&u23Frac()>=.1)o.push({k:'youth',t:'若手の育成に時間をください',d:'後半戦はリーグ戦でのU-23の出場時間を'+Math.round(youthNeed()*100)+'%以上にすると約束する。守れば評価が上がり、守れなければ下がる'});
   return o;
  }
  var nt=nextTierOf(),ttl=nt==='J1'&&S.board.nextTgt&&S.board.nextTgt.rank===1;
  return [ttl?{k:'challenge',t:'カップ戦のタイトルも狙わせてほしい',d:'リーグ優勝に加えてカップ戦のタイトルも目標にする代わりに、貯まった資金を人件費に多く回せる（35%→50%）。評価の振れ幅も大きくなる'}
   :nt==='J1'?{k:'challenge',t:'もっと上の順位を狙わせてほしい',d:'目標の順位を引き上げる代わりに、貯まった資金を人件費に多く回せる（35%→50%）。評価の振れ幅も大きくなる'}
-  :{k:'challenge',t:'もっと上を狙わせてほしい',d:'目標を引き上げる（昇格を目指す）代わりに、貯まった資金を人件費に多く回せる（35%→50%）。評価の振れ幅も大きくなる'},{k:'standard',t:'その目標で行きましょう',d:'提示どおりの目標で臨む（貯まった資金の35%まで人件費に回せる）'},{k:'safe',t:'まずは足場を固めさせてほしい',d:'目標を下げる代わりに、人件費に回す資金も抑えめ（35%→25%）'},{k:'youth',x:1,s:'目標を緩め、若手の出場時間を約束',t:'若手を育てる1年にしたい',d:'順位の目標を少し緩めてもらう代わりに、リーグ戦でのU-23の出場時間を一定以上にすると約束する（守れば評価が上がる）'},{k:'invest',x:1,s:'人件費の枠を抑え、工事費の3割を負担',t:'人件費より施設に投資したい',d:'人件費に回す資金を抑える（35%→20%）代わりに、来季の施設・スタジアムの工事費の3割を経営陣が負担する'}];
+  :{k:'challenge',t:'もっと上を狙わせてほしい',d:'目標を引き上げる（昇格を目指す）代わりに、貯まった資金を人件費に多く回せる（35%→50%）。評価の振れ幅も大きくなる'},{k:'standard',t:'その目標で行きましょう',d:'提示どおりの目標で臨む（貯まった資金の35%まで人件費に回せる）'},{k:'safe',t:'まずは足場を固めさせてほしい',d:'目標を下げる代わりに、人件費に回す資金も抑えめ（35%→25%）'},{k:'youth',t:'若手を育てる1年にしたい',d:'順位の目標を少し緩めてもらう代わりに、リーグ戦でのU-23の出場時間を一定以上にすると約束する（守れば評価が上がる）'}];
 }
+/* 目標の話が終わったら、お願いの段階へ */
+function meetToReq(M,L){
+ M.phase='req';M.pts=meetPtsCalc(M);M.asked={};
+ L('them',M.pts>=3?'ほかに相談があれば、遠慮なくどうぞ。今日は時間を取ってあります。':M.pts===2?'ほかに何か、お願いしたいことはありますか？':'ほかにお願いがあれば聞きますが……あまり多くは約束できませんよ。');
+ L('sys','社長に相談できる余地：'+M.pts+'（お願いごとに1〜2使います。断られても戻りません）');
+}
+function meetEnd(M,L){M.done=true;L('them',M.k==='mid'?'後半戦もよろしくお願いします。':'今日はありがとうございました。来季もよろしくお願いします。');}
 function meetChoose(k){
  var M=S.meet;if(!M||M.done)return M;
  var opt=meetOpts().filter(function(o){return o.k===k;})[0];if(!opt)return M;
  function L(w,x){M.log.push({who:w,text:x});}
- L('gm',opt.t+'。');
  var tr=S.board.trust,b=S.board;
- if(k==='money'){
-  var pr=clamp(.3+ownerT().ask+(tr-50)/120+(M.st==='good'?.15:M.st==='near'?.08:-.05)+(S.fin.cash>payCap()*.3?.15:S.fin.cash<0?-.35:0),.05,.9);
-  if(rnd()<pr&&S.fin.cash>0){var cp=payCap(),add=Math.round(clamp(S.fin.cash*.25,cp*.06,cp*.18)/100)*100;b.boost=(b.boost||0)+add;trust(-2);L('them','……わかりました。年'+money(add)+'まで上積みしましょう。そのぶん、結果で応えてください。');L('sys','人件費の上限が今季'+money(add)+'上積みされました');}
-  else{trust(-1);L('them','いまのクラブの状況では難しいですね。今ある戦力で、なんとかお願いします。');}
- }else if(k==='lower'){
+ if(M.phase==='req'){
+  if(k==='finish'){L('gm','相談は以上です。');meetEnd(M,L);return M;}
+  L('gm',opt.t+'。');
+  M.pts-=opt.c;M.asked[k]=1;
+  var ok=rnd()<opt.p,mid=M.k==='mid',ny=S.year+(mid?0:1);
+  if(k==='money'){
+   if(ok&&S.fin.cash>0){var cp=payCap(),add=Math.round(clamp(S.fin.cash*.2,cp*.05,cp*.15)/100)*100;
+    b.boostQ=b.boostQ||{};b.debtQ=b.debtQ||{};
+    if(mid)b.boost=(b.boost||0)+add;else b.boostQ[ny]=(b.boostQ[ny]||0)+add;
+    b.debtQ[ny+1]=(b.debtQ[ny+1]||0)+Math.round(add/2/10)*10;trust(-2);
+    L('them',pick(['……わかりました。'+money(add)+'まで上積みしましょう。ただし前借りです。翌シーズンの枠から半分は返してもらいますよ。','オーナーと相談します。……'+money(add)+'までなら。そのぶん、翌シーズンは締めてもらいます。']));
+    L('sys',(mid?'今季':'来季')+'の人件費の上限が'+money(add)+'上積みされます。その翌シーズン（'+seasonLabel(ny+1)+'）の上限から'+money(Math.round(add/20)*10)+'を差し引きます');}
+   else{trust(-2);L('them',pick(['いまのクラブの状況では難しいですね。今ある戦力で、なんとかお願いします。','簡単に「お金を出してくれ」と言われても困ります。まずは結果を見せてください。','その余裕はありません。資金の使い方を、もう一度見直してください。']));}
+  }else if(k==='sponsor'){
+   var sl=spFreeSlot();
+   if(ok&&sl){var of=makeSponsorOffer(sl);of.amt=Math.round(of.amt*1.3/10)*10;of.cond='none';of.co=pick(SPON_CO);of.exp=S.day+30;S.sponOffers.push(of);
+    L('them',pick(['取引先に声をかけてみましょう。きっと興味を持ってくれるはずです。','親会社の付き合いのある企業を紹介します。悪い話ではないと思いますよ。']));L('sys',sl.n+'に、'+of.co+'から年'+money(of.amt)+'の提案が届きました（「経営＞スポンサー」・30日以内に返事）');}
+   else L('them',pick(['いま紹介できる先は、あいにく見当たりません。','スポンサー集めは営業の仕事です。まずはクラブの魅力を高めてください。']));
+  }else if(k==='promo'){
+   if(ok){b.promo={y:ny};L('them',pick(['いいでしょう。親会社の広報とも連携して、地域へのPRを強化します。','わかりました。駅や商店街にポスターを出して、地元メディアにも声をかけます。']));L('sys',(mid?'今季':'来季')+'のあいだ、ファン層の伸びが上向き、ホームの観客も増えます');}
+   else L('them',pick(['広報の予算はもう使い切っています。クラブの活動でお願いします。','いまはそこまで手が回りません。まずはピッチの上で魅力を見せてください。']));
+  }else if(k==='facility'){
+   if(ok){var fcap=Math.max(2000,Math.round(expectedRevenue()*(mid?.15:.25)/100)*100);b.facAid=mid?{y:S.year,r:.4,left:fcap,once:1}:{y:ny,r:.3,left:fcap};
+    L('them',pick(['施設はクラブの土台です。費用の一部はこちらで持ちましょう。','設備への投資なら、前向きに支援します。']));L('sys',(mid?'今季、次の工事1回の費用の4割':'来季の工事費の3割')+'を経営陣が負担します（上限'+money(fcap)+'）');}
+   else L('them',pick(['いまは設備にお金をかける時期ではありません。','気持ちはわかりますが、予算的に難しいですね。']));
+  }else if(k==='xfer'){
+   if(ok){var xcap=Math.max(1000,Math.round(expectedRevenue()*.1/100)*100);b.xferAid={y:ny,r:.3,left:xcap,win:mid?'winter':'summer'};
+    L('them',pick(['どうしても必要な選手なら、移籍金の一部はこちらで持ちましょう。','いい選手を獲れるなら、オーナーも納得するでしょう。']));L('sys',(mid?'冬':'夏')+'の登録期間の移籍金について、3割を経営陣が負担します（上限'+money(xcap)+'）');}
+   else{trust(-1);L('them',pick(['移籍金まで面倒は見られません。','獲るなら、クラブの資金の範囲でお願いします。']));}
+  }else if(k==='coach'){
+   if(ok){b.coachUp={y:ny};L('them',pick(['監督は大事なポジションです。枠は広げましょう。','いい監督を呼べるなら、多少の出費はかまいません。']));L('sys',(mid?'今季':'来季')+'、監督の年俸の上限が3割上がります');}
+   else L('them',pick(['監督の年俸は、いまの枠で十分だと思います。','その件は、もう少し様子を見ましょう。']));
+  }
+  if(!meetOpts().some(function(o){return o.req;})){if(M.pts<=0)L('them','今日はこのくらいにしましょう。');meetEnd(M,L);}
+  return M;
+ }
+ /* ①目標のすり合わせ */
+ L('gm',opt.t+'。');
+ if(k==='keep'){L('them',M.st==='good'?'順調ですね。この調子でお願いします。':M.st==='near'?'あと一歩です。後半戦に期待していますよ。':'……わかりました。巻き返しを期待しています。');}
+ else if(k==='lower'){
   var t=b.target,n=S.lg[myClub().tier].ids.length;
   if(t.promo)b.target={t:'6位以内',rank:6,promo:false};else{t.rank=Math.min(n-2,t.rank+3);t.t=t.rank+'位以内';}
   trust(-6);L('them','……わかりました。目標は「'+b.target.t+'」に改めます。ただ、これ以上の後退は許されませんよ。');
@@ -3768,14 +3879,6 @@ function meetChoose(k){
   L('them',pick(['若い選手は、このクラブの財産です。その考えには賛成します。','育成は時間のかかる仕事です。腰を据えてやってください。','ユースから上がってきた選手が活躍すれば、ファンも喜びます。']));
   L('them','ただし、言葉だけでは困ります。後半戦、リーグ戦でU-23の選手の出場時間を'+Math.round(nd*100)+'%以上にしてください。シーズンの評価で確かめます。');
   L('sys','若手育成の約束：後半戦のU-23の出場時間 '+Math.round(nd*100)+'%以上（クラブの方針「若手の起用」を「若手を優先」以上にしました）');
- }else if(k==='promo'){
-  var pp=clamp(.4+ownerT().ask+(tr-50)/150+(M.st==='good'?.1:0)+(S.fin.cash<0?-.25:0),.1,.85);
-  if(rnd()<pp){b.promo={y:S.year};L('them',pick(['いいでしょう。親会社の広報とも連携して、地域へのPRを強化します。','わかりました。駅や商店街にポスターを出して、地元メディアにも声をかけます。','スタジアムに足を運んでもらう仕掛けを、こちらでも考えましょう。']));L('sys','今季のあいだ、ファン層の伸びが上向きます（毎月+1.2%ほど）');}
-  else L('them',pick(['広報の予算はもう使い切っています。今季はクラブの活動でお願いします。','いまはそこまで手が回りません。まずはピッチの上で魅力を見せてください。']));
- }else if(k==='facility'){
-  var pf=clamp(.3+ownerT().ask+(tr-50)/120+(S.fin.cash>0?.05:-.3)+(M.st==='good'?.08:0),.05,.85);
-  if(rnd()<pf){var cap=Math.max(2000,Math.round(expectedRevenue()*.15/100)*100);b.facAid={y:S.year,r:.4,left:cap,once:1};L('them',pick(['施設はクラブの土台です。次の工事は、費用の一部をこちらで持ちましょう。','オーナーとも話していたところです。設備への投資なら、前向きに支援します。']));L('sys','今季、次の施設・スタジアムの工事1回は費用の4割を経営陣が負担します（上限'+money(cap)+'）');}
-  else L('them',pick(['いまは設備にお金をかける時期ではありません。','気持ちはわかりますが、今季の予算では難しいですね。']));
  }else{
   b.plan=k;
   var ttl2=nextTierOf()==='J1'&&b.nextTgt&&b.nextTgt.rank===1;
@@ -3783,11 +3886,10 @@ function meetChoose(k){
    :tr>=55?'いいでしょう。オーナーにも話を通して、人件費の枠を広げます。そのかわり、結果が出なければ責任も重くなりますよ。':'自信があるのはわかりました。ただ、いまの評価でその言葉は重いですよ。人件費の枠は広げますが、結果が出なければ厳しい判断になります。');
   else if(k==='safe')L('them','慎重なのは悪いことではありません。そのぶん人件費の枠は抑えめにします。');
   else if(k==='youth')L('them',pick(['若手を育てる1年、ですか。いいでしょう。目標は少し緩めます。そのかわり、若い選手をしっかり使ってください。','育成で勝てるクラブになれれば理想です。順位の目標は少し下げますが、若手の出場時間は約束してもらいますよ。']));
-  else if(k==='invest')L('them',pick(['施設への投資は、何年も先に効いてきます。工事費の一部はこちらで持ちましょう。そのぶん人件費は抑えめでお願いします。','いい判断だと思います。練習環境やスタジアムが整えば、選手もファンも集まります。']));
-  else L('them','では、その方向で準備を進めましょう。来季もよろしくお願いします。');
+  else L('them','では、その方向で準備を進めましょう。');
  }
- L('them',M.k==='mid'?'後半戦もよろしくお願いします。':'今日はありがとうございました。');
- M.done=true;M.choice=k;
+ M.choice=k;
+ meetToReq(M,L);
  return M;
 }
 
@@ -3809,6 +3911,10 @@ var NEG_CARDS={
  play:{n:'出場機会を約束する',d:'主力として起用する方針を伝える',w:{ambition:.6,loyal:.5,easy:.5,stable:.4,money:.2}},
  long:{n:'長く安心してほしい',d:'複数年契約で生活の安定を約束する',w:{stable:.8,loyal:.5,easy:.4,money:.25,ambition:.2}},
  cash:{n:'一括で支払う',d:'移籍金を分割せずに支払う',w:{_:.5}},
+ sellon:{n:'売却時の分配',d:'将来この選手を売ったら、移籍金の20%を相手に渡す（いまの移籍金は下がる）',w:{_:.55}},
+ bonus:{n:'出来高払い',d:'リーグ戦20試合に出たら、移籍金の15%を追加で払う（いまの移籍金は下がる）',w:{_:.55}},
+ buyback:{n:'買い戻し条項',d:'2年以内なら、相手が移籍金の1.5倍で買い戻せる（若手ほど効く）',w:{_:.45}},
+ urgent:{n:'即決を迫る',d:'今日中の決断を求める。売りたいクラブには効くが、そうでないと交渉が打ち切られることも',w:{_:.45}},
  bond:{n:'今後もいい関係を',d:'将来の選手のやり取りも含めた関係づくりを提案する',w:{_:.4}}
 };
 /* 監督との交渉では、説得の言葉も監督向けにする（選手に向ける「君」「プレー」などは使わない） */
@@ -3835,6 +3941,45 @@ function coachOfferLine(N,sal,yrs){
  return N.round>0?pick(['条件を見直しました。'+s+'でいかがでしょう。','では、'+s+'ではどうでしょうか。','精一杯の数字です。'+s+'でお願いできませんか。'])
   :N.kind==='coachx'?pick(['続投の条件として、'+s+'を考えています。','引き続き、'+s+'でお願いできないでしょうか。','クラブからの提示は'+s+'です。'])
   :pick([s+'でお願いできないでしょうか。','こちらからは、'+s+'の契約をお願いしたいと考えています。','クラブからの提示は'+s+'です。ぜひ指揮をお願いしたい。']);
+}
+/* ---------- 移籍交渉（クラブ間）の交渉カードとトレード ---------- */
+var XFER_GM={
+ sellon:['将来この選手を売ることになったら、移籍金の2割をそちらにお渡しします。','売却時の分配をつけます。この選手が飛躍すれば、そちらにも利益が出ます。'],
+ bonus:['出来高をつけましょう。リーグ戦で20試合に出たら、移籍金の15%を上乗せします。','いまの額は抑えたい。そのかわり、活躍したら追加で払います。'],
+ buyback:['2年以内なら、移籍金の1.5倍で買い戻せる条項をつけます。','手放すのが惜しいなら、買い戻しの権利を残しておきませんか。'],
+ urgent:['今日中に決めていただきたい。ほかの候補とも話を進めています。','時間をかけるつもりはありません。この場で返事をください。']
+};
+function xferCard(N,k){
+ var p=N.p,fc=S.clubs[p.club],sellish=!!(p.list||(fc&&((fc.money||0)<0||fc.pol==='sell'))),young=p.age<=23&&p.pot-ovr(p)>=6;
+ N.terms=N.terms||{};
+ var P={sellon:.5+(young?.2:0),bonus:fc&&(fc.money||0)<0?.3:.6,buyback:young?.7:.3,urgent:sellish?.75:.3}[k];
+ var ok=rnd()<P;
+ if(k==='urgent'&&!ok&&!sellish&&rnd()<.5){negLine(N,'them',pick(['そんなに急かされても困ります。この話はなかったことにしましょう。','こちらにも事情があります。急かすなら、お断りします。']));p_block(p);return negClose(N,false);}
+ if(ok){N.ask*={sellon:.92,bonus:.9,buyback:.88,urgent:.92}[k];N.terms[k]=1;
+  negLine(N,'them',pick({sellon:['将来の分配があるなら、いまの額は少し譲りましょう。','育てた選手の価値が、将来も報われるならありがたい。'],bonus:['活躍したら払っていただけるなら、いまは少し下げましょう。','出来高つきなら、こちらも納得できます。'],buyback:['買い戻せるなら、手放す決心がつきます。少し下げましょう。','その条項があるなら、話は変わってきます。'],urgent:['……わかりました。この場で決めましょう。少し下げます。','急な話ですが、こちらも早く決めたかった。歩み寄りましょう。']}[k]));}
+ else negLine(N,'them',pick({sellon:['将来の話より、いまの金額です。','分配は不要です。いま払える額を提示してください。'],bonus:['出来高はいりません。いま払える額でお願いします。','うちは、いま現金が必要なんです。'],buyback:['買い戻しの権利があっても、うちには使い道がありません。','その条項に興味はありませんね。'],urgent:['急かされても、評価額は変わりません。','こちらのペースで考えさせてください。']}[k]));
+ return N;
+}
+/* 移籍の条件を、獲得した選手に記録する */
+function applyXferTerms(p,N,fid){
+ var T=N.terms||{},fee=(N.fee||0)+(N.tv||0),c=S.clubs[fid],notes=[];if(!c)return;
+ if(T.sellon){p.sellon={c:fid,r:.2};notes.push('売却時の分配（20%）');}
+ if(T.bonus){p.xb={c:fid,amt:Math.max(10,Math.round(fee*.15/10)*10),need:20,y:S.year+1};notes.push('出来高（リーグ戦20試合で'+money(p.xb.amt)+'）');}
+ if(T.buyback){p.bb={c:fid,price:Math.max(100,Math.round(fee*1.5/10)*10),until:S.year+1};notes.push('買い戻し条項（2年以内・'+money(p.bb.price)+'）');}
+ if(notes.length)addNews(pname(p)+'の移籍の条件：'+notes.join('・'));
+}
+/* トレード：交換に出す選手を、相手クラブがいくらと評価するか（主力になれる選手ほど高く、ベテランや高年俸は低め） */
+function tradeVal(fc,q){var lv=clubLevel(fc),o=ovr(q),f=o>=lv+2?1.05:o>=lv-2?.95:o>=lv-5?.75:.5;if(q.age>=31)f*=.8;if(q.sal>marketSal(q,fc.tier)*1.4)f*=.85;return Math.round(valueOf(q)*f/10)*10;}
+function tradeValue(N,ids){var fc=S.clubs[N.p.club];if(!fc)return 0;return sum((ids||[]).map(function(id){return S.P[id];}).filter(function(q){return q&&q.club===S.me;}),function(q){return tradeVal(fc,q);});}
+function tradeCands(){return roster(myClub()).filter(function(q){return !q.ghost&&!(q.loan&&q.loan.from!==S.me);}).sort(function(a,b){return valueOf(b)-valueOf(a);});}
+/* 交換に出す選手が移籍を受け入れるか（愛着が強い選手や、下のカテゴリへ行くのを嫌がる野心家は断ることがある） */
+function tradeConsent(q,fc){var a=attOf(q),r=q.wantOut?0:a>=75?.5:a>=50?.15:0;if(tierIdx(fc)>tierIdx(myClub())&&persOf(q)==='ambition')r+=.25;if(persOf(q)==='loyal'&&a>=60)r+=.15;return rnd()>=r;}
+function doTrade(ids,fid){
+ var fc=S.clubs[fid];if(!fc)return;
+ ids.forEach(function(id){var q=S.P[id];if(!q||q.club!==S.me)return;
+  if(q.sellon&&S.clubs[q.sellon.c]){var pay=Math.round(tradeVal(fc,q)*q.sellon.r/10)*10;if(pay>0){ledger('exp','trans',pay);S.clubs[q.sellon.c].money=(S.clubs[q.sellon.c].money||0)+pay;}delete q.sellon;}
+  leaveClub(q);joinClub(q,fc,ri(2,3),Math.max(Math.round(q.sal*.9/10)*10,marketSal(q,fc.tier)));q.list=0;q.loanList=0;markMoved(q);
+  addNews(pname(q)+'がトレードで'+fc.short+'へ移籍',1);});
 }
 var _nid=1;
 function directorName(){var n=jpName();return n.sei+'強化部長';}
@@ -3970,10 +4115,19 @@ function negSubmit(N,o){
   return N;
  }
  if(N.stage==='club'&&N.kind==='buy'){
-  var fee=o.fee;negLine(N,'gm',pick(['移籍金'+money(fee)+'でどうでしょう。',money(fee)+'を用意しました。','こちらの提示は'+money(fee)+'です。']));
+  var fee=o.fee,tr=(o.trade||[]).filter(function(id){return S.P[id]&&S.P[id].club===S.me;}),fc0=S.clubs[N.p.club];
+  if(tr.length){
+   var no=tr.filter(function(id){return !tradeConsent(S.P[id],fc0);});
+   if(no.length){no.forEach(function(id){negLine(N,'sys',pname(S.P[id])+'が'+fc0.short+'への移籍を拒みました。交換要員から外します');});if(typeof UI!=='undefined'&&UI.nv&&UI.nv.trade)UI.nv.trade=UI.nv.trade.filter(function(id){return no.indexOf(id)<0;});return N;}
+   if(fc0.pl.length+tr.length>40){negLine(N,'sys',fc0.short+'は登録枠に空きがなく、選手を受け入れられません');return N;}
+  }
+  var tv=tradeValue(N,tr),tn=tr.map(function(id){return pname(S.P[id]);}).join('と');
+  negLine(N,'gm',tr.length?pick([(fee?'移籍金'+money(fee)+'に加えて、':'')+tn+'を出します。これでどうでしょう。',tn+(fee?'と移籍金'+money(fee):'')+'で、交換をお願いしたい。']):pick(['移籍金'+money(fee)+'でどうでしょう。',money(fee)+'を用意しました。','こちらの提示は'+money(fee)+'です。']));
   if(S.fin.cash<fee){negLine(N,'sys','手元資金が足りません（'+money(S.fin.cash)+'）');return N;}
-  if(fee>=N.ask){negLine(N,'them',pick(['いいでしょう。'+money(fee)+'で手を打ちます。','誠意は伝わりました。'+money(fee)+'で合意しましょう。','わかりました。あとは本人次第です。','その額なら、こちらも納得です。']));N.fee=fee;negToPlayer(N);return N;}
-  N.round++;var g=fee/N.ask;
+  if(tr.length&&rnd()<.6)negLine(N,'them',pick([tn+'なら、うちでも使えそうです。','なるほど、'+tn+'ですか。評価はおよそ'+money(tv)+'ですね。']));
+  N.trade=tr;N.tv=tv;fee+=tv;
+  if(fee>=N.ask){fee-=tv;if(tr.length)negLine(N,'them',pick(['いいでしょう。その条件で手を打ちます。','交換も含めて、合意しましょう。','うちにとっても悪くない話です。決めましょう。']));else negLine(N,'them',pick(['いいでしょう。'+money(fee)+'で手を打ちます。','誠意は伝わりました。'+money(fee)+'で合意しましょう。','わかりました。あとは本人次第です。','その額なら、こちらも納得です。']));N.fee=fee;negToPlayer(N);return N;}
+  N.round++;var g=fee/N.ask;fee-=tv;
   if(N.round>=N.max){negLine(N,'them',pick(['残念ですが、この条件では応じられません。','時間をかけましたが、折り合えませんでしたね。この話は終わりにしましょう。','うちの評価とは隔たりが大きい。今回はお断りします。']));p_block(N.p);return negClose(N,false);}
   negLine(N,'them',g>=.93?pick(['近いところまで来ていますね。もうひと押しを。','あと少しです。こちらも上を説得しやすくなる。','ほぼ届いています。もうひと声いただけますか。']):g>=.8?pick(['その額では難しいですね。','まだ開きがあります。','上が首を縦に振らないでしょう。']):pick(['さすがに安すぎます。うちの評価とは大きく違う。','冗談でしょう。主力をその額では出せません。','その数字なら、話はここまでです。']));
   return N;
@@ -3996,7 +4150,7 @@ function negSubmit(N,o){
   var isC=N.kind==='coach'||N.kind==='coachx';
   if(!isC&&sal<ms){negLine(N,'sys',TIERNAME[mc.tier]+'の最低年俸は'+money(ms)+'です');return N;}
   if(isC&&sal>coachCap()){negLine(N,'sys','経営陣の承認が下りません（監督の年俸は年'+money(coachCap())+'まで）');return N;}
-  var add=N.kind==='renew'?sal-N.p.sal:isC||N.kind==='rookie'?0:sal;
+  var add=N.kind==='renew'?sal-N.p.sal:isC||N.kind==='rookie'?0:sal-(N.kind==='buy'&&N.trade?sum(N.trade.map(function(id){return S.P[id];}).filter(Boolean),function(q){return q.sal;}):0);
   if(add>0&&!budgetOK(add)){negLine(N,'sys','経営陣：その年俸だと人件費の上限を超えます（残り'+money(budgetRoom())+'）');return N;}
   if(isC)negLine(N,'gm',coachOfferLine(N,sal,yrs));
   else negLine(N,'gm',N.round>0?pick(['では、年俸'+money(sal)+'、'+yrs+'年でどうだろう。','条件を見直した。年俸'+money(sal)+'、'+yrs+'年だ。','これでどうだ。年俸'+money(sal)+'、'+yrs+'年。']):pick(['年俸'+money(sal)+'、'+yrs+'年でどうだろう。','こちらの提示は年俸'+money(sal)+'、'+yrs+'年だ。','年俸'+money(sal)+'で、'+yrs+'年契約を考えている。']));
@@ -4028,8 +4182,10 @@ function negCard(N,k){
  if(k==='play'&&N.p){var xi=pickXI(mc,roster(mc),1,FOREIGN_LIMIT[mc.tier]),lo=Math.min.apply(null,xi.filter(function(p){return p&&!p.ghost&&POSLINE[p.pos]===POSLINE[N.p.pos];}).map(ovr).concat([99]));if(ovr(N.p)<lo-4)pr-=.25;}
  if(k==='long'&&N.p&&N.p.age>=30)pr+=.15;
  if(isCoachN(N))negLine(N,'gm',coachCardLine(N,k));
+ else if(XFER_GM[k])negLine(N,'gm',pick(XFER_GM[k]));
  else negLine(N,'gm',pick({need:['君の力がどうしても必要なんだ。','このチームに足りないピースは、君なんだ。','監督も君を名指しで欲しがっている。'],vision:mc.tier==='J1'?['うちは本気でタイトルを狙っている。一緒に戦ってほしい。','数年後にはアジアの舞台で戦うクラブにする。その中心にいてほしい。','スタジアムも練習環境も、これから良くしていく。']:['うちは本気で上を目指している。一緒に戦ってほしい。','数年後には上のカテゴリにいる。その中心にいてほしい。','スタジアムも練習環境も、これから良くしていく。'],play:['主力として使う。それは約束する。','開幕から君を軸にチームを組む。','出場機会は保証する。監督とも話してある。'],long:['腰を据えて、長くプレーしてほしい。','君にはこのクラブの顔になってほしい。','数年先まで見据えた話をしたい。'],cash:['移籍金は一括で支払います。','支払いは契約と同時に全額済ませます。'],bond:['今後もいい関係を築いていきたい。','今後、そちらの若手を預かる話もできると思う。']}[k]));
  var ok=rnd()<clamp(pr,.05,.95);
+ if(N.stage==='club'&&N.kind==='buy'&&XFER_GM[k]){return xferCard(N,k);}
  if(N.stage==='club'&&N.kind==='buy'){if(ok){N.ask*=k==='cash'?.95:.96;negLine(N,'them',pick(['……そういうことなら、少し歩み寄りましょう。','それは助かります。こちらも少し譲りましょう。','なるほど。では条件を見直します。']));}else negLine(N,'them',pick(['ありがたい話ですが、金額は金額です。','それとこれとは別の話です。','気持ちはわかりますが、評価額は変わりません。']));return N;}
  if(ok){N.want*=k==='long'?.95:.93;if(k==='long')N.yrsPref=3;if(k==='play'&&N.p)N.p.promise=S.year;
   if(isCoachN(N))negLine(N,'them',coachCardOk(k));
@@ -4051,7 +4207,7 @@ function negClose(N,ok){
  }
  var r;
  if(N.kind==='renew'){p.yrs=p.yrs+N.yrs;p.sal=N.sal;p.renewNo=0;p.renewed=1;addNews(pname(p)+'と契約を更新（'+N.yrs+'年・年俸'+money(N.sal)+'）');r={ok:true};}
- else if(N.kind==='free'||N.kind==='buy'){r=completeSign(p,N.fee||0,N.sal,N.yrs);}
+ else if(N.kind==='free'||N.kind==='buy'){var fid=p.club;r=completeSign(p,N.fee||0,N.sal,N.yrs);if(r.ok&&N.kind==='buy'){applyXferTerms(p,N,fid);if(N.trade&&N.trade.length)doTrade(N.trade,fid);}}
  else if(N.kind==='loan'){r=completeLoan(p,N.share,N.opt);}
  else if(N.kind==='coach'){r=offerCoach(N.id,N.sal,N.yrs,true);}
  else if(N.kind==='coachx'){r=extendCoach(N.yrs,N.sal);}
@@ -4066,8 +4222,8 @@ function completeSign(p,fee,sal,yrs){
  if(squadSize()>=40)return {ok:false,msg:'登録上限（40人）に達しています'};
  if(foreignBlocked(p))return {ok:false,msg:'JFLでは外国籍選手の登録は5人までです'};
  if(S.fin.cash<fee)return {ok:false,msg:'資金が足りません'};
- var from=p.club?S.clubs[p.club]:null;
- if(from){ledger('exp','trans',fee);from.money+=fee;leaveClub(p);}
+ var from=p.club?S.clubs[p.club]:null,aid=from?xferAidOf(fee):0;
+ if(from){ledger('exp','trans',fee-aid);from.money+=fee;leaveClub(p);if(aid){S.board.xferAid.left-=aid;addNews('経営陣が'+pname(p)+'の移籍金のうち'+money(aid)+'を負担しました',1);}}
  joinClub(p,mc,yrs,sal);p.st=newSt();markMoved(p);
  addNews(pname(p)+'が'+(from?from.short+'から完全移籍で':'フリーで')+'加入'+(fee?'（移籍金'+money(fee)+'）':''),1);
  return {ok:true,msg:pname(p)+'の獲得が決まりました'};
@@ -5940,7 +6096,8 @@ function bMoney(){
  h+='<div class="card">'+hd('team','人件費の上限')+'<div><div class="row between small"><span>選手人件費（年額）</span><span class="num">'+money(pay)+' / 上限 '+money(bud)+'</span></div><div class="bar'+(pay>bud?' over':'')+'"><i style="width:'+Math.min(100,pay/bud*100)+'%"></i></div></div>';
  h+='<div class="kv"><span>毎年続けられる額<br><span class="small muted">毎年入る収入（スポンサー・入場料・配分金・支援金など）'+money(C.E)+' − 人件費以外の費用 '+money(C.fixed)+'（収入の62%まで）</span></span><span class="num nw">'+money(C.sus)+'</span></div>';
  h+='<div class="kv"><span>貯まった資金から<br><span class="small muted">資金のうち運転資金（'+money(C.res)+'）を超える分の'+Math.round(C.share*100)+'%</span></span><span class="num nw">'+money(C.sur)+'</span></div>';
- if(C.boost)h+='<div class="kv"><span>社長に認めてもらった上積み<br><span class="small muted">今季のみ</span></span><span class="num nw">'+money(C.boost)+'</span></div>';
+ if(C.boost)h+='<div class="kv"><span>社長に認めてもらった上積み<br><span class="small muted">今季のみ（前借り）</span></span><span class="num nw">'+money(C.boost)+'</span></div>';
+ if(C.debt)h+='<div class="kv"><span>前借りの返済<br><span class="small muted">昨季の上積みの半分</span></span><span class="num nw" style="color:var(--bad)">−'+money(C.debt)+'</span></div>';
  h+='<div class="small muted">人件費はクラブの資金から払います。上限はいまの収入見込みと資金からその場で計算するので、スポンサー契約・移籍金・賞金で増え、施設投資などで資金を使えば減ります。前年の人件費を基準に積み上がることはありません。</div></div>';
  h+=closeCardHTML(pj);
  h+='<div class="card">'+hd('shield','経営母体')+'<div class="kv"><span>'+ow.n+'</span><span class="small muted">支援金 年'+money(f.owner)+'<br>（毎月25日に12分の1ずつ）</span></div><ul class="opts-pts">'+ow.pts.slice(1).map(function(t){return '<li>'+t+'</li>';}).join('')+'</ul></div>';
@@ -6072,7 +6229,7 @@ function negThem(N,st){
  if(st==='club'||N.kind==='sell')return {face:function(sz){return dirFace(N.dir||N.who,sz);},name:N.dir||N.who,sub:'相手クラブ'};
  var p=N.p;return {face:function(sz){return pFace(p,sz);},name:pname(p),sub:N.kind==='renew'?'所属選手':N.kind==='rookie'?'新人候補':'獲得候補'};
 }
-var NEG_CARD_IC={need:'heart',vision:'flag',play:'boot',long:'clock',cash:'yen',bond:'chat'};
+var NEG_CARD_IC={need:'heart',vision:'flag',play:'boot',long:'clock',cash:'yen',bond:'chat',sellon:'yen',bonus:'up',buyback:'swap',urgent:'clock'};
 function negHTML(){
  var N=UI.neg,sub=N.stage==='player'&&(N.kind==='buy'||N.kind==='loan')?'個人条件':N.stage==='club'&&N.kind!=='sell'?'クラブ間':'';
  UI.negProf=null;
@@ -6143,7 +6300,7 @@ function renderNegPanel(){
  if(N.done){
   if(UI.negBusy){el.innerHTML='<div class="nres">…</div>';return;}
   if(N.pend&&N.e)h+='<div class="nres">'+ic('clock')+'<b>返事待ち</b><span>'+fmtD(N.e.ans)+'までに届きます</span></div>';
-  else h+=N.ok?'<div class="nres ok">'+ic('check')+'<b>契約成立</b><span>'+(N.kind==='sell'?'移籍金 '+money(N.cur):N.kind==='loan'?'年俸の'+Math.round((N.share||0)*100)+'%を負担'+(N.opt?'・買取額 '+money(N.opt.price):''):(N.fee?'移籍金 '+money(N.fee)+'・':'')+(N.sal?'年俸 '+money(N.sal)+'・'+N.yrs+'年':''))+'</span></div>':'<div class="nres ng">'+ic('x')+'<b>交渉不成立</b></div>';
+  else h+=N.ok?'<div class="nres ok">'+ic('check')+'<b>契約成立</b><span>'+(N.kind==='sell'?'移籍金 '+money(N.cur):N.kind==='buy'&&N.trade&&N.trade.length?'移籍金 '+money(N.fee||0)+'＋交換 '+N.trade.map(function(id){return S.P[id]?pshort(S.P[id]):'';}).join('・')+(N.sal?'・年俸 '+money(N.sal)+'・'+N.yrs+'年':''):N.kind==='loan'?'年俸の'+Math.round((N.share||0)*100)+'%を負担'+(N.opt?'・買取額 '+money(N.opt.price):''):(N.fee?'移籍金 '+money(N.fee)+'・':'')+(N.sal?'年俸 '+money(N.sal)+'・'+N.yrs+'年':''))+'</span></div>':'<div class="nres ng">'+ic('x')+'<b>交渉不成立</b></div>';
   h+='<button class="btn pri wide" data-act="negQuit">戻る</button>';el.innerHTML=h;return;
  }
  var cards=[];
@@ -6154,7 +6311,9 @@ function renderNegPanel(){
  }
  if(N.stage==='club'&&N.kind==='buy'){
   h+=stepperHTML('fee','提示する移籍金','手元資金 '+money(S.fin.cash));
-  cards=['cash','bond'];
+  h+=tradeRowHTML(N);
+  if(xferAidLeft())h+='<div class="small" style="color:var(--good)">経営陣が移籍金の'+Math.round(S.board.xferAid.r*100)+'%を負担します（残りの枠 '+money(xferAidLeft())+'）</div>';
+  cards=['sellon','bonus','buyback','urgent'];
  }else if(N.stage==='club'&&N.kind==='loan'){
   h+='<div class="nvh"><span><small>こちらが負担する年俸</small><b class="num">'+money(N.p.sal*UI.nv.share)+'</b></span><span class="small muted">年俸 '+money(N.p.sal)+'</span></div><div class="seg">'+[.5,.6,.7,.8,.9,1].map(function(v){return '<button class="chip'+(UI.nv.share===v?' on':'')+'" data-act="nvShare" data-v="'+v+'">'+Math.round(v*100)+'%</button>';}).join('')+'</div>';
   h+=optPanelHTML(N);
@@ -6179,12 +6338,25 @@ function optPanelHTML(N){
  if(!on)return h+'<div class="small muted">付けると、シーズン後にあらかじめ決めた額で完全移籍に切り替えられます（レンタル料 '+money(T.fee)+'・買取額 '+money(T.price)+'）。</div>';
  return h+'<div class="optbox"><div class="kv"><span>レンタル料（いま支払う・戻らない）</span><b class="num">'+money(T.fee)+'</b></div><div class="kv"><span>買取額（シーズン後に行使するか選ぶ）</span><b class="num">'+money(T.price)+'</b></div><div class="kv small muted"><span>完全移籍で獲る場合の目安</span><span class="num">'+money(T.ask)+'</span></div><div class="small muted">'+esc(T.why||'')+'行使すると'+T.yrs+'年契約・年俸'+money(N.p.sal)+'で完全移籍になります。年俸の負担は、オプションを付けると1割ほど譲ってもらえます。</div></div>';
 }
+/* トレード：交換に出す選手（2人まで）。相手クラブの評価額の目安も出す */
+function tradeRowHTML(N){
+ var T=UI.nv.trade||[],h='<div class="trow"><span class="small muted">交換に出す選手</span>';
+ h+=T.map(function(id){var q=S.P[id];return q?'<span class="tchip">'+posChip(q.pos)+esc(pshort(q))+'<small class="num">評価 '+money(tradeVal(S.clubs[N.p.club],q))+'</small><button class="ib sm" data-act="trDel" data-id="'+id+'" aria-label="外す">×</button></span>':'';}).join('');
+ if(T.length<2)h+='<button class="btn sm" data-act="trPick">'+ic('swap')+'選手を加える</button>';
+ return h+'</div>'+(T.length?'<div class="small muted">移籍金と交換する選手の評価額の合計で、相手が判断します。</div>':'');
+}
+function tradeSheet(){
+ var N=UI.neg;if(!N)return;var fc=S.clubs[N.p.club],T=UI.nv.trade||[];
+ var h='<h2>交換に出す選手を選ぶ</h2><div class="small muted">'+esc(fc.short)+'がどう評価するかの目安です。主力になれる選手ほど高く、ベテランや年俸の高い選手は低めに見られます。愛着の強い選手は移籍を断ることがあります。</div><div class="plist">';
+ h+=tradeCands().filter(function(q){return T.indexOf(q.id)<0;}).slice(0,24).map(function(q){return '<div class="caprow2">'+pFace(q,36)+'<span class="cn"><b>'+esc(pname(q))+'</b><small>'+posChip(q.pos)+' '+q.age+'歳・OVR '+Math.round(ovr(q))+'・年俸 '+money(q.sal)+'</small><small class="muted">相手の評価 '+money(tradeVal(fc,q))+(attOf(q)>=75?'・愛着が強い':q.wantOut?'・移籍を志願中':'')+'</small></span><button class="btn sm pri" data-act="trAdd" data-id="'+q.id+'">加える</button></div>';}).join('');
+ openSheet(h+'</div>');
+}
 function readNv(){['sal','fee'].forEach(function(k){var el=$('nv-'+k);if(el)UI.nv[k]=Math.max(0,Math.round((+el.value||0)/10)*10);});}
 function negGo(){
  var N=UI.neg;if(!N||N.done||UI.negBusy)return;readNv();
  var stg=N.stage,o={};
  if(N.kind==='sell'){o.fee=UI.nv.fee;UI.lastG=null;}
- else if(stg==='club'&&N.kind==='buy'){o.fee=UI.nv.fee;UI.lastG=o.fee/N.ask;}
+ else if(stg==='club'&&N.kind==='buy'){o.fee=UI.nv.fee;o.trade=(UI.nv.trade||[]).slice();UI.lastG=(o.fee+tradeValue(N,o.trade))/N.ask;}
  else if(stg==='club'&&N.kind==='loan'){o.share=UI.nv.share;o.opt=!!UI.nv.opt;UI.lastG=o.share/(o.opt&&N.optT&&!N.optT.no?Math.max(.4,N.need-.1):N.need);}
  else{o.sal=UI.nv.sal;o.yrs=UI.nv.yrs;if(N.want)UI.lastG=o.sal*(1-.04*Math.abs(o.yrs-(N.yrsPref||2))*(N.pers==='stable'||N.pers==='money'?1.5:1))/N.want;}
  negSubmit(N,o);
@@ -6261,9 +6433,14 @@ function renderMeet(typing){
  if(UI.meetBusy&&pn.innerHTML)return;
  if(M.done){pn.innerHTML='<button class="btn pri wide" data-act="meetQuit">面談を終える</button>';return;}
  var os=meetOpts(),xo=os.filter(function(o){return o.x;});
- pn.innerHTML='<div class="small muted">GMとして伝えること</div>'+os.filter(function(o){return !o.x;}).map(function(o){return '<button class="mopt" data-act="meetPick" data-k="'+o.k+'"><b>'+esc(o.t)+'</b><span>'+esc(o.d)+'</span></button>';}).join('')+
+ if(M.phase==='req'){
+  pn.innerHTML='<div class="row between small"><span class="muted">社長へのお願い</span><span class="mpts">相談できる余地 '+meetDots(M.pts)+'</span></div>'+os.filter(function(o){return o.req;}).map(function(o){var cl=o.p>=.6?'good':o.p>=.35?'warn':'bad';return '<button class="mopt" data-act="meetPick" data-k="'+o.k+'"><b>'+esc(o.t)+'</b><span>'+esc(o.d)+'</span><span class="mreq"><i>余地 '+meetDots(o.c,o.c)+'</i><i class="pill '+cl+'">'+chanceLabel(o.p)+'</i></span></button>';}).join('')+'<button class="btn wide" data-act="meetPick" data-k="finish">相談は以上です（面談を終える）</button>';
+  return;
+ }
+ pn.innerHTML='<div class="small muted">まずは目標について</div>'+os.filter(function(o){return !o.x;}).map(function(o){return '<button class="mopt" data-act="meetPick" data-k="'+o.k+'"><b>'+esc(o.t)+'</b><span>'+esc(o.d)+'</span></button>';}).join('')+
   (xo.length?'<div class="small muted">ほかの相談</div><div class="mopts2">'+xo.map(function(o){return '<button class="mopt sm" data-act="meetPick" data-k="'+o.k+'"><b>'+esc(o.t)+'</b><span>'+esc(o.s)+'</span></button>';}).join('')+'</div>':'');
 }
+function meetDots(n,max){var h='';for(var i=0;i<(max||4);i++)h+='<i class="mdot'+(i<n?' on':'')+'"></i>';return '<span class="mdots">'+h+'</span>';}
 function revealMeet(){
  var M=S.meet;if(!M||!UI.meet)return;clearTimeout(revealMeet._t);
  if(UI.meetShown>=M.log.length){UI.meetBusy=false;renderMeet(false);return;}
@@ -6330,6 +6507,9 @@ document.addEventListener('click',function(ev){
   case 'nv':{readNv();var big=d.d==='1'||d.d==='-1',sg=d.d.charAt(0)==='-'?-1:1,cur=UI.nv[d.k]||0;UI.nv[d.k]=Math.max(0,cur+sg*nSteps(cur)[big?1:0]);renderNegPanel();break;}
   case 'nvYrs':readNv();UI.nv.yrs=+d.v;renderNegPanel();break;
   case 'nvShare':UI.nv.share=+d.v;renderNegPanel();break;
+  case 'trPick':tradeSheet();break;
+  case 'trAdd':{UI.nv.trade=(UI.nv.trade||[]).concat([d.id]).slice(0,2);closeSheet();renderNegPanel();break;}
+  case 'trDel':{UI.nv.trade=(UI.nv.trade||[]).filter(function(x){return x!==d.id;});renderNegPanel();break;}
   case 'nvOpt':UI.nv.opt=+d.v;renderNegPanel();break;
   case 'optResp':{var r3=respondOpt(d.id,d.y==='1'),inDec3=UI.sheetCur&&UI.sheetCur.key==='dec';closeSheet();res(r3);if(inDec3&&pendingDecisions().length)UI.sheetCur=null,showDecisions('day');break;}
   case 'optEx':{var r4=optExercise(d.id);closeSheet();res(r4);break;}
