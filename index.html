@@ -656,6 +656,10 @@ body.running .dock .btn.on{background:var(--club);color:var(--club-ink);border-c
 .mopt{display:flex;flex-direction:column;gap:2px;text-align:left;width:100%;border:1px solid var(--line);background:var(--surface2);border-radius:12px;padding:10px 12px;box-shadow:inset 0 -2px 0 rgba(0,0,0,.06)}
 .mopt b{font-size:14px}.mopt span{font-size:12px;color:var(--muted)}
 .mopt:active{transform:translateY(1px)}
+.pill.use{color:#fff;border-color:transparent;font-weight:700}
+.u-start{background:var(--good)!important}.u-sub{background:var(--lDF)!important}.u-bench{background:#7a8591!important}
+.useb{display:inline-block;margin-left:3px;width:15px;height:15px;border-radius:4px;color:#fff;font:700 10px/15px var(--f-body);text-align:center;font-style:normal;vertical-align:1px}
+.userow{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--line)}.userow .lnk{flex:1;min-width:0;text-align:left;background:none;border:0;padding:0;font-weight:700;color:inherit;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .pill.cap{background:#e2b33c;border-color:transparent;color:#1c1606;font-weight:700}
 .capg{display:inline-grid;place-items:center;min-width:26px;height:26px;border-radius:7px;font-family:var(--f-num);font-weight:700;font-size:17px;color:#fff;background:var(--muted)}
 .capg.gA{background:#c2861a}.capg.gB{background:var(--good)}.capg.gC{background:var(--lDF)}.capg.gD{background:#7a8591}.capg.gE{background:var(--bad)}
@@ -2505,6 +2509,7 @@ function acleResult(){var A=S.cups.acle;if(A.fin&&A.fin[0]&&(A.fin[0].a===S.me||
 
 /* ---- オフシーズン（6/30） ---- */
 function offseason(){
+ fiscalClose();
  var mv=S.moves||{up:{},down:{}};
  /* カテゴリ移動 */
  Object.keys(mv.up).forEach(function(id){moveTier(S.clubs[id],mv.up[id],true);});
@@ -2564,6 +2569,34 @@ function applyMinSal(){
 /* ============ 経営：資金・観客・スポンサー・契約・移籍・施設・人事 ============ */
 var STAFF={JFL:1500,J3:14000,J2:40000,J1:110000};   /* 監督以外のスタッフ・アカデミー・営業・管理などクラブ運営費（万円/年） */   /* 監督以外のスタッフ・フロント人件費（万円/年） */
 var MERCH={JFL:.25,J3:.5,J2:1,J1:2};             /* 平均観客1人あたりの年間物販収入（万円） */
+/* 事業運営費：グッズの原価・試合運営のスタッフ・営業経費など。入場料・スポンサー料・物販の収入に比例し、
+ * 規模の大きいカテゴリほど割合が高い（大きなクラブほど事業にお金がかかる） */
+var OPS_RATE={JFL:.05,J3:.09,J2:.13,J1:.18};
+/* 決算（6月30日）：税引前の利益に法人税等（30%、過去の赤字は繰り越して差し引く）。
+ * 手元資金が「毎年入る収入の半分」（カテゴリごとの下限あり）を超えた分は、その半分を親会社・出資者への配当などに回す。
+ * どのクラブも儲け続けることはできず、強くなるほど資金は一定の規模で頭打ちになる */
+var TAX_RATE=.3,DIV_SHARE=.5,DIV_KEEP=.5,DIV_FLOOR={JFL:15000,J3:40000,J2:100000,J1:250000};
+function divLabel(){return S.fin.otype==='citizen'?'株主への配当・地域への還元':'親会社・出資企業への配当';}
+function divThreshold(reg,t){return Math.round(Math.max(reg*DIV_KEEP,DIV_FLOOR[t||myClub().tier])/100)*100;}
+/* 決算の見積もり（pre：税引前利益、reg：毎年入る収入、cash：決算前の資金） */
+function closeCalc(pre,reg,cash){
+ var nol=S.fin.nol||0,taxable=Math.max(0,pre-nol),tax=Math.round(taxable*TAX_RATE/10)*10;
+ var thr=divThreshold(reg),after=cash-tax,div=after>thr?Math.round((after-thr)*DIV_SHARE/100)*100:0;
+ return {pre:pre,tax:tax,thr:thr,div:div,nol:nol,end:after-div};
+}
+function seasonRegRev(sea){var r=0;for(var k in sea.rev)if(k!=='trans'&&k!=='prize')r+=sea.rev[k];return r;}
+/* 6月30日の決算 */
+function fiscalClose(){
+ var sea=S.fin.season,rv=0,ex=0,k;for(k in sea.rev)rv+=sea.rev[k];for(k in sea.exp)ex+=sea.exp[k];
+ var pre=rv-ex,c=closeCalc(pre,seasonRegRev(sea),S.fin.cash);
+ S.fin.nol=Math.max(0,(S.fin.nol||0)-Math.max(0,pre))+Math.max(0,-pre);
+ if(c.tax>0)ledger('exp','tax',c.tax);
+ if(c.div>0){S.fin.cash-=c.div;sea.out={div:c.div};}
+ var rec=S.hist[S.hist.length-1];if(rec&&rec.y===S.year){rec.tax=c.tax;rec.div=c.div;rec.cashEnd=S.fin.cash;rec.pre=pre;}
+ S.fin.close={y:S.year,pre:pre,tax:c.tax,div:c.div,thr:c.thr,cash:S.fin.cash};
+ inbox({type:'info',title:seasonLabel(S.year)+'シーズンの決算',body:'税引前の利益は'+money(pre)+'。'+(c.tax>0?'法人税等'+money(c.tax)+'を納めました。':pre<0?'赤字のため法人税等はかかりません（赤字は来季以降に繰り越して差し引けます）。':'')+(c.div>0?'手元資金が目安（'+money(c.thr)+'）を超えたため、'+money(c.div)+'を'+divLabel()+'に回しました。':'')+'期末の資金は'+money(S.fin.cash)+'です。'});
+}
+
 var PRICE_LV=[{n:'低め',m:.75},{n:'標準',m:1},{n:'高め',m:1.3},{n:'強気',m:1.6}];
 /* ホームタウン活動：g＝試合ごとの観客の上乗せ、m＝ファン層の毎月の伸び */
 var HOMETOWN_LV=[{n:'なし',c:0,g:0,m:0},{n:'地域イベント',c:40,g:.03,m:.012},{n:'学校訪問・地域密着',c:110,g:.06,m:.022},{n:'大規模プロモーション',c:260,g:.1,m:.034}];
@@ -2643,7 +2676,10 @@ function payday(){
  var sp=sponsorPayNow();if(sp)ledger('rev','spon',sp);
  attMonth();
  if(DISTRIB[t])ledger('rev','dist',Math.round(DISTRIB[t]/12));
- ledger('rev','merch',Math.round((avgAtt(mc)||mc.fan)*MERCH[t]/12));
+ var mr=Math.round((avgAtt(mc)||mc.fan)*MERCH[t]/12);ledger('rev','merch',mr);
+ /* 事業運営費：前の給料日からの入場料・今月のスポンサー料・物販に比例 */
+ var sea=S.fin.season,gd=(sea.rev.gate||0)-(sea.g0||0);sea.g0=sea.rev.gate||0;
+ var ops=Math.round(OPS_RATE[t]*(gd+sp+mr));if(ops>0)ledger('exp','ops',ops);
  if(S.fin.owner)ledger('rev','owner',Math.round(S.fin.owner/12));
  /* ファン層の成長 */
  var fg=fanGrowth(mc),f0=mc.fan;
@@ -2686,7 +2722,7 @@ function payCapParts(withOffers){
 }
 function payCap(){return payCapParts().cap;}
 /* 今季1年分の収支見込み（ここまでの実績＋残りの見込み）。円グラフ用に「選手年俸・監督年俸・固定費・投資」と余剰（または不足）に分ける */
-var FIXED_KEYS=['staff','fac','stad','promo','match','travel'];
+var FIXED_KEYS=['staff','ops','fac','stad','promo','match','travel'];
 function seasonOutlook(){
  var sea=S.fin.season||{rev:{},exp:{}},X=sea.exp,pj=seasonProjection(),rv=0,k;
  for(k in sea.rev)rv+=sea.rev[k];
@@ -2704,14 +2740,19 @@ function seasonProjection(){
  var base=avgAtt(mc)||mc.fan,st=mc.stad&&STAD_TYPES[mc.stad.type];
  var spon=sum(S.sponsors,function(s){return Math.max(0,s.amt-(s.paid||0));});
  var rev=hl*Math.min(base,mc.cap)*TICKET_BASE[t]*PRICE_LV[S.fin.price].m/10000+spon+(DISTRIB[t]+base*MERCH[t]+S.fin.owner)*f;
- var pay=payroll()*f,coach=(mc.coach?mc.coach.sal:0)*f,fx={staff:STAFF[t]*f,fac:facUpkeep()*f,stad:(st?st.rent:0)*f,promo:HOMETOWN_LV[S.fin.hometown].c*n,match:hl*MATCH_COST[t],travel:al*MATCH_COST[t]*.35};
+ var gateR=hl*Math.min(base,mc.cap)*TICKET_BASE[t]*PRICE_LV[S.fin.price].m/10000,merchR=base*MERCH[t]*f;
+ var pay=payroll()*f,coach=(mc.coach?mc.coach.sal:0)*f,fx={staff:STAFF[t]*f,ops:OPS_RATE[t]*(gateR+spon+merchR),fac:facUpkeep()*f,stad:(st?st.rent:0)*f,promo:HOMETOWN_LV[S.fin.hometown].c*n,match:hl*MATCH_COST[t],travel:al*MATCH_COST[t]*.35};
  var fixed=0;for(var k in fx)fixed+=fx[k];var other=coach+fixed;
- return {rev:Math.round(rev),pay:Math.round(pay),coach:Math.round(coach),fixed:Math.round(fixed),fx:fx,other:Math.round(other),end:Math.round(S.fin.cash+rev-pay-other),months:n};
+ /* 6月30日の決算（法人税等・配当）の見込みも差し引く */
+ var sea=S.fin.season||{rev:{},exp:{}},rv0=0,ex0=0,q;for(q in sea.rev)rv0+=sea.rev[q];for(q in sea.exp)ex0+=sea.exp[q];
+ var pre=Math.round(S.fin.cash+rev-pay-other),cl=closeCalc(rv0+rev-(ex0+pay+other),seasonRegRev(sea)+rev,pre);
+ return {rev:Math.round(rev),pay:Math.round(pay),coach:Math.round(coach),fixed:Math.round(fixed),fx:fx,other:Math.round(other),preClose:pre,pre:Math.round(cl.pre),nol:cl.nol,tax:cl.tax,div:cl.div,thr:cl.thr,end:Math.round(cl.end),months:n};
 }
 /* 人件費以外にかかる年間コストの見積もり（人件費の上限を計算するときに使う） */
 function fixedCostEst(){
  var mc=myClub(),t=mc.tier,home=LEAGUE_GAMES[t]/2,st=mc.stad&&STAD_TYPES[mc.stad.type];
- return STAFF[t]+(mc.coach?mc.coach.sal:STAFF[t]*.4)+MATCH_COST[t]*home*1.35+facUpkeep()+(st?st.rent:0)+HOMETOWN_LV[S.fin.hometown].c*12;
+ var ops=OPS_RATE[t]*(mc.fan*home*TICKET_BASE[t]*PRICE_LV[S.fin.price].m/10000+sponsorIncome()+mc.fan*MERCH[t]);
+ return STAFF[t]+(mc.coach?mc.coach.sal:STAFF[t]*.4)+MATCH_COST[t]*home*1.35+facUpkeep()+(st?st.rent:0)+HOMETOWN_LV[S.fin.hometown].c*12+ops;
 }
 /* ---------- シーズン開始時の経営タスク ---------- */
 function seasonStartTasks(){
@@ -5145,7 +5186,13 @@ function listSorter(k,get,pot){
 }
 function sortChips(act,cur,opts){return '<div class="seg">'+opts.map(function(s){return '<button class="chip'+(cur===s[0]?' on':'')+'" data-act="'+act+'" data-s="'+s[0]+'">'+s[1]+'</button>';}).join('')+'</div>';}
 /* 起用方針と愛着度（選手シート） */
-var USE_N={start:'先発で使う',sub:'途中出場を増やす',bench:'控えに回す'},USE_SHORT={start:'先発起用',sub:'途中起用',bench:'控え'};
+var USE_N={start:'先発で使う',sub:'途中出場を増やす',bench:'控えに回す'},USE_SHORT={start:'先発起用',sub:'途中起用',bench:'控えに回す'},USE_MARK={start:'先',sub:'途',bench:'控'};
+/* 個別に起用を指示している選手のまとめ（選手一覧・布陣の画面） */
+function useListHTML(){
+ var ps=roster(myClub()).filter(function(p){return p.use;}).sort(function(a,b){return ['start','sub','bench'].indexOf(a.use)-['start','sub','bench'].indexOf(b.use)||POS.indexOf(a.pos)-POS.indexOf(b.pos);});
+ if(!ps.length)return '';
+ return '<div class="card">'+hd('whistle','起用を指示している選手（'+ps.length+'人）')+ps.map(function(p){return '<div class="userow"><span class="pill use u-'+p.use+'">'+USE_SHORT[p.use]+'</span>'+posChip(p.pos)+'<button class="lnk" data-act="pl" data-id="'+p.id+'">'+esc(pname(p))+'</button><span class="small muted num">OVR '+Math.round(ovr(p))+'</span><button class="btn sm" data-act="useClr" data-id="'+p.id+'">監督に任せる</button></div>';}).join('')+'<div class="small muted">それ以外の選手は、監督が調子と能力で選びます。</div></div>';
+}
 function useAttHTML(p){
  var loanIn=p.loan&&p.loan.from!==S.me,a=attOf(p),F=attFactors(p),h='';
  h+=hd('whistle','起用方針')+'<div class="seg">'+[['','監督に任せる'],['start',USE_N.start],['sub',USE_N.sub],['bench',USE_N.bench]].map(function(o){return '<button class="chip'+((p.use||'')===o[0]?' on':'')+'" data-act="useSet" data-id="'+p.id+'" data-v="'+o[0]+'">'+o[1]+'</button>';}).join('')+'</div><div class="small muted">'+({start:'能力が少し劣っても先発に選ばれやすくなります。',sub:'ベンチに入れて、交代で優先的に送り出します。若手の育成に。',bench:'先発から外し、控えとして待機させます。'}[p.use]||'普段どおり、監督が調子と能力で選びます。')+'</div>';
@@ -5206,6 +5253,7 @@ function prowHTML(p,pre){
  var mine=p.club===S.me,mineOut=!!(p.loan&&p.loan.from===S.me&&!mine),known=mine||mineOut,o=known?ovr(p):seeOvr(p),t=myClub().tier;
  var meta=[];
  if(pre)meta.push(pre);
+ if(mine&&p.use)meta.push('<span class="pill use u-'+p.use+'">'+USE_SHORT[p.use]+'</span>');
  meta.push('<span>'+p.age+'歳</span>');
  meta.push('<span>'+typeOf(p,known)+'</span>');
  if(isForeign(p))meta.push('<span class="pill'+(countsF(p,t)?' info':'')+'">'+esc(natLabel(p))+(countsF(p,t)?'':'・枠外')+'</span>');
@@ -5216,7 +5264,6 @@ function prowHTML(p,pre){
  if(mine&&p.loan&&p.loan.from!==S.me)meta.push('<span class="pill">レンタル加入'+(p.loan.opt?'・買取OP':'')+'</span>');
  if(mine&&p.awk===S.year)meta.push('<span class="pill good">覚醒</span>');
  if(mine&&S.cap&&S.cap.id===p.id)meta.push('<span class="pill cap">キャプテン</span>');
- if(mine&&p.use)meta.push('<span class="pill info">'+USE_SHORT[p.use]+'</span>');
  if(mine&&!(p.loan&&p.loan.from!==S.me)){if(p.wantOut)meta.push('<span class="pill bad">移籍志願</span>');else if(p.att!=null&&p.att<30)meta.push('<span class="pill warn">不満</span>');}
  if(p.list)meta.push('<span class="pill warn">放出候補</span>');
  if(mine&&p.yrs<=1&&!p.renewed&&!(p.loan&&p.loan.from!==S.me))meta.push('<span class="pill warn">今季で満了</span>');
@@ -5229,7 +5276,7 @@ function vSquad(){
  h+='<div class="row" style="gap:12px">'+['GK','DF','MF','FW'].map(function(k){return '<span class="row" style="gap:4px"><span class="pos '+k+'">'+k+'</span><b class="num" style="font-size:17px">'+cnt[k]+'</b></span>';}).join('')+'<span class="small muted">（けが人を除く）</span></div>';
  h+='<div class="small">'+(t==='JFL'?'外国籍 <b>'+fc+' / '+FOREIGN_REG.JFL+'人</b>（JFLの登録上限）':'外国籍 <b>'+fc+'人</b>（試合に出られるのは同時に'+FOREIGN_LIMIT[t]+'人まで・登録は無制限）'+(pc?'　提携国籍 '+pc+'人は枠外':''))+'</div>';
  h+=qa('OVRとは','本来のポジションでの総合力。S〜Gのランクで色分けしています。本職以外で起用すると、適性に応じて下がります。')+'</div>';
- h+=capCardHTML();
+ h+=capCardHTML()+useListHTML();
  h+='<div class="seg">'+[['pos','ポジション順'],['ovr','OVR順'],['age','年齢順'],['sal','年俸順'],['cond','調子順'],['att','愛着順']].map(function(s){return '<button class="chip'+(UI.sort===s[0]?' on':'')+'" data-act="sort" data-s="'+s[0]+'">'+s[1]+'</button>';}).join('')+'</div>';
  var srt={pos:function(a,b){return POS.indexOf(a.pos)-POS.indexOf(b.pos)||ovr(b)-ovr(a);},ovr:function(a,b){return ovr(b)-ovr(a);},age:function(a,b){return a.age-b.age;},sal:function(a,b){return b.sal-a.sal;},cond:function(a,b){return b.cond-a.cond;},att:function(a,b){return attOf(a)-attOf(b);}}[UI.sort]||function(a,b){return POS.indexOf(a.pos)-POS.indexOf(b.pos)||ovr(b)-ovr(a);};
  h+='<div class="card"><div class="plist">'+ps.sort(srt).map(function(p){return prowHTML(p);}).join('')+'</div></div>';
@@ -5263,7 +5310,7 @@ function pitchHTML(form,xi){
  F.s.forEach(function(s,i){
   var p=xi[i];if(!p)return;
   var L=lay[i],x=9+L.x*82,y=lineupY(L),a=aptOf(p,s[0]),nm=p.ghost?'（空き）':pshort(p);
-  h+='<button class="pp" '+(p.ghost?'':'data-act="pl" data-id="'+p.id+'"')+' style="left:'+x.toFixed(1)+'%;top:'+y.toFixed(1)+'%" aria-label="'+esc(s[0]+' '+nm)+'"><span class="ppf">'+(p.ghost?'<span class="face ghost"></span>':pFace(p,34))+ovrBox(effAt(p,s[0]))+'<i class="pb '+POSLINE[s[0]]+'">'+s[0]+(p.ghost||a===3?'':APT_MARK[a])+'</i>'+(S.cap&&S.cap.id===p.id?'<i class="capb">C</i>':'')+'</span><b class="n">'+esc(nm)+'</b></button>';
+  h+='<button class="pp" '+(p.ghost?'':'data-act="pl" data-id="'+p.id+'"')+' style="left:'+x.toFixed(1)+'%;top:'+y.toFixed(1)+'%" aria-label="'+esc(s[0]+' '+nm)+'"><span class="ppf">'+(p.ghost?'<span class="face ghost"></span>':pFace(p,34))+ovrBox(effAt(p,s[0]))+'<i class="pb '+POSLINE[s[0]]+'">'+s[0]+(p.ghost||a===3?'':APT_MARK[a])+'</i>'+(S.cap&&S.cap.id===p.id?'<i class="capb">C</i>':'')+'</span><b class="n">'+esc(nm)+(p.use&&p.club===S.me?'<i class="useb u-'+p.use+'">'+USE_MARK[p.use]+'</i>':'')+'</b></button>';
  });
  return h+'</div>';
 }
@@ -5274,7 +5321,8 @@ function vLineup(){
  if(!mc.coach)h+='<div class="small" style="color:var(--warn)">監督不在のため、コーチが暫定で選んでいます。</div>';
  h+=pitchHTML(f,xi);
  h+='<div class="row between small"><span>先発の平均OVR</span><b class="num" style="font-size:17px">'+avg.toFixed(1)+'</b></div>';
- h+='<div class="row between"><span class="small muted">○得意　△こなせる　×不慣れ</span><button class="btn sm" data-act="go" data-t="team" data-s="coach">'+ic('flag')+'方向性を指示</button></div></div>';
+ h+='<div class="row between"><span class="small muted">○得意　△こなせる　×不慣れ'+(ps.some(function(p){return p.use;})?'<br>先＝先発起用　途＝途中起用　控＝控えに回す':'')+'</span><button class="btn sm" data-act="go" data-t="team" data-s="coach">'+ic('flag')+'方向性を指示</button></div></div>';
+ h+=useListHTML();
  var inXI={};xi.forEach(function(p){if(p)inXI[p.id]=1;});
  var bench=ps.filter(function(p){return !inXI[p.id];}).sort(function(a,b){return POS.indexOf(a.pos)-POS.indexOf(b.pos)||ovr(b)-ovr(a);});
  h+='<div class="card">'+hd('person','控え・ベンチ外（'+bench.length+'人）')+'<div class="plist">'+bench.map(function(p){return prowHTML(p);}).join('')+'</div></div>';
@@ -5772,12 +5820,12 @@ function renewModal(pid){
 
 /* ---------- 経営 ---------- */
 var REVN={gate:'入場料',spon:'スポンサー',dist:'Jリーグ配分金',merch:'グッズ・物販',owner:'オーナー支援',prize:'賞金',trans:'移籍金収入'};
-var EXPN={sal:'選手年俸',coach:'監督年俸',staff:'スタッフ・クラブ運営',match:'試合運営',travel:'遠征',stad:'スタジアム使用料',fac:'施設維持',promo:'ホームタウン活動',invest:'施設投資',trans:'移籍金・違約金'};
+var EXPN={sal:'選手年俸',coach:'監督年俸',staff:'スタッフ・クラブ運営',ops:'事業運営費（グッズ原価・営業など）',tax:'法人税等',match:'試合運営',travel:'遠征',stad:'スタジアム使用料',fac:'施設維持',promo:'ホームタウン活動',invest:'施設投資',trans:'移籍金・違約金'};
 /* ---------- クラブの概況：収支の円グラフと主な指標 ----------
  * 円グラフは「1年分の収入見込み」を100%として、選手年俸・監督年俸・固定費・投資に何割を使い、何割が余るかを示す。
  * 支出が収入を上回るときは支出全体を100%とし、収入でまかなえない分を外側の赤い弧で示す */
 var PIE_SEG=[['players','選手年俸','--v1'],['coach','監督年俸','--v2'],['fixed','固定費','--v3'],['invest','投資（施設・移籍金など）','--v4']];
-var FIXN={staff:'スタッフ・運営',match:'試合運営',travel:'遠征',fac:'施設維持',stad:'スタジアム使用料',promo:'ホームタウン活動'};
+var FIXN={staff:'スタッフ・運営',ops:'事業運営費',match:'試合運営',travel:'遠征',fac:'施設維持',stad:'スタジアム使用料',promo:'ホームタウン活動'};
 function pctOf(v,t){return t>0?Math.round(v/t*100):0;}
 function donutSVG(o,size,thick){
  var def=o.surplus<0,total=Math.max(1,def?o.spend:o.rev),cx=size/2,r=(size-thick)/2-(def?6:1),C=2*Math.PI*r,acc=0;
@@ -5842,6 +5890,16 @@ function kpiGrid(){
  h+=lic;
  return h+'</div>';
 }
+/* 決算（6月30日）：今季の見込みと前期の結果 */
+function closeCardHTML(pj){
+ var c=S.fin.close,h='<div class="card">'+hd('yen','決算（6月30日）');
+ h+='<div class="kv"><span>今季の利益（税引前・見込み）</span><span class="num">'+money(pj.pre)+'</span></div>';
+ h+='<div class="kv"><span>法人税等（利益の30%）'+(pj.nol>0?'<br><span class="small muted">過去の赤字 '+money(pj.nol)+' を差し引き</span>':'')+'</span><span class="num">'+money(pj.tax)+'</span></div>';
+ h+='<div class="kv"><span>'+divLabel()+'<br><span class="small muted">資金が目安 '+money(pj.thr)+' を超えた分の半分</span></span><span class="num">'+money(pj.div)+'</span></div>';
+ h+='<div class="kv"><span><b>期末の資金（見込み）</b></span><b class="num">'+money(pj.end)+'</b></div>';
+ if(c)h+='<div class="small muted">前期（'+seasonLabel(c.y)+'）の決算：利益 '+money(c.pre)+'・法人税等 '+money(c.tax)+(c.div?'・'+divLabel()+' '+money(c.div):'')+'・期末の資金 '+money(c.cash)+'</div>';
+ return h+qa('決算のしくみ','毎年6月30日に決算をします。利益の30%は法人税等として納めます（赤字の年があれば、その分を翌年以降の利益から差し引けます）。また、手元の資金が「毎年入る収入（入場料・スポンサー・配分金・物販・支援金）の半分」を超えると、超えた分の半分を'+divLabel()+'に回します（目安には、カテゴリごとの下限があります：NSL 1.5億円・N3 4億円・N2 10億円・N1 25億円）。強いクラブになるほど資金は一定の規模で頭打ちになるので、貯めるだけでなく、選手や施設に使っていきましょう。')+'</div>';
+}
 function bMoney(){
  var mc=myClub(),f=S.fin,sea=f.season,h='';
  var rv=sum(Object.keys(sea.rev),function(k){return sea.rev[k];}),ex=sum(Object.keys(sea.exp),function(k){return sea.exp[k];});
@@ -5852,6 +5910,7 @@ function bMoney(){
  h+='<div class="kv"><span>貯まった資金から<br><span class="small muted">資金のうち運転資金（'+money(C.res)+'）を超える分の'+Math.round(C.share*100)+'%</span></span><span class="num nw">'+money(C.sur)+'</span></div>';
  if(C.boost)h+='<div class="kv"><span>社長に認めてもらった上積み<br><span class="small muted">今季のみ</span></span><span class="num nw">'+money(C.boost)+'</span></div>';
  h+='<div class="small muted">人件費はクラブの資金から払います。上限はいまの収入見込みと資金からその場で計算するので、スポンサー契約・移籍金・賞金で増え、施設投資などで資金を使えば減ります。前年の人件費を基準に積み上がることはありません。</div></div>';
+ h+=closeCardHTML(pj);
  h+='<div class="card">'+hd('shield','経営母体')+'<div class="kv"><span>'+ow.n+'</span><span class="small muted">支援金 年'+money(f.owner)+'<br>（毎月25日に12分の1ずつ）</span></div><ul class="opts-pts">'+ow.pts.slice(1).map(function(t){return '<li>'+t+'</li>';}).join('')+'</ul></div>';
  function lines(o,N){var a=Object.keys(N).filter(function(k){return o[k];});return a.length?a.map(function(k){return '<div class="kv"><span>'+N[k]+'</span><span class="num">'+money(o[k])+'</span></div>';}).join(''):'<div class="small muted">まだありません（毎月25日に計上）</div>';}
  h+='<div class="card">'+hd('up','今季の収入')+''+lines(sea.rev,REVN)+'</div><div class="card">'+hd('down','今季の支出')+''+lines(sea.exp,EXPN)+'</div>';
@@ -5919,6 +5978,7 @@ function showReview(y){
  var h='<div class="small muted">'+seasonLabel(r.y)+'シーズン</div><h2>'+TIERNAME[r.tier]+' '+r.rank+'位　'+esc(r.fate)+'</h2>';
  h+='<div class="kv"><span>成績</span><span class="num">'+r.w+'勝'+r.d+'分'+r.l+'敗　勝点'+r.pts+'　得失点'+(r.gf-r.ga)+'</span></div><div class="kv"><span>目標</span><span>'+esc(r.target)+'</span></div><div class="kv"><span>経営陣の評価</span><span class="num">'+(r.trustD>0?'+':'')+r.trustD+'（信頼度'+r.trust+'）</span></div>';
  h+='<div class="kv"><span>天皇杯</span><span>'+esc(r.cup.emp)+'</span></div><div class="kv"><span>ルヴァン杯</span><span>'+esc(r.cup.lev)+'</span></div><div class="kv"><span>ACLE</span><span>'+esc(r.cup.acle)+'</span></div>';
+ if(r.tax!=null)h+='<div class="kv"><span>決算</span><span class="num">法人税等 '+money(r.tax)+(r.div?'・配当など '+money(r.div):'')+'</span></div>';
  h+='<div class="kv"><span>収入 / 支出</span><span class="num">'+money(r.rev)+' / '+money(r.exp)+'</span></div><div class="kv"><span>期末資金</span><span class="num">'+money(r.cash)+'</span></div><div class="kv"><span>平均観客</span><span class="num">'+fmtN(r.att)+'人</span></div><div class="kv"><span>監督</span><span>'+esc(r.coach)+'（'+r.form+'）</span></div>';
  if(r.lic&&r.tier!=='J1')h+='<div class="kv"><span>ライセンス判定</span><span>'+(r.lic.lv?r.lic.lv+'ライセンス相当':'基準未達')+'</span></div>';
  h+=''+hd('table','各リーグ')+'<div class="tbl"><table>'+TIERS.map(function(t){var a=r.awards[t];return '<tr><td>'+t+'</td><td>優勝 '+esc(S.clubs[a.champ]?S.clubs[a.champ].short:'-')+'</td><td class="small">得点王 '+(a.scorer?esc(a.scorer.n)+'（'+esc(a.scorer.c)+'・'+a.scorer.g+'点）':'-')+'</td><td class="small">MVP '+(a.mvp?esc(a.mvp.n)+'（'+esc(a.mvp.c)+'）':'-')+'</td></tr>';}).join('')+'</table></div>';
@@ -6249,6 +6309,7 @@ document.addEventListener('click',function(ev){
   case 'negDecline':if(UI.neg&&!UI.negBusy){respondOffer(UI.neg.id,false);UI.neg.done=true;negLine(UI.neg,'gm','申し訳ないが、今回はお断りします。');negLine(UI.neg,'sys','オファーを断りました。');saveGame();revealNeg();}break;
   case 'doOffer':doOffer(d.id,d.t);break;
   case 'pleaResp':{var r2=respondPlea(d.id,d.c),inDec2=UI.sheetCur&&UI.sheetCur.key==='dec';closeSheet();res(r2);if(inDec2&&pendingDecisions().length)UI.sheetCur=null,showDecisions('day');break;}
+  case 'useClr':{var pc=S.P[d.id];if(pc&&pc.club===S.me){pc.use=null;saveGame();toast(pname(pc)+'の起用は監督に任せます');render();}break;}
   case 'useSet':{var pu=S.P[d.id];if(pu&&pu.club===S.me){pu.use=d.v||null;saveGame();toast(d.v?pname(pu)+'：'+USE_N[d.v]:pname(pu)+'の起用は監督に任せます');playerModal(d.id);render();}break;}
   case 'offerResp':{var r=respondOffer(d.id,d.y==='1'),inDec=UI.sheetCur&&UI.sheetCur.key==='dec';closeSheet();res(r);if(inDec&&pendingDecisions().length)UI.sheetCur=null,showDecisions('day');break;}
   case 'renew':openNeg('renew',d.id);break;
