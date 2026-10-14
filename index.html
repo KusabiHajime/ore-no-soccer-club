@@ -2712,10 +2712,13 @@ function payday(){
  if(S.fin.cash>0)S.warnedCash=0;
  if(ymd(S.day).m%3===0&&!S.seasonDone){var pj=seasonProjection();if(pj.end<0)trust(-2,'このままでは期末に資金がマイナスになる見込みです');}
 }
+/* 収入見込みに使う観客数：ファン層をもとに、スタジアムの収容人数を上限とする */
+function attEst(mc){return Math.min(mc.fan,mc.cap||mc.fan);}
 function expectedRevenue(withOffers){
  var mc=myClub(),t=mc.tier,home=LEAGUE_GAMES[t]/2,sp=sponsorIncome();
  if(withOffers){var best={},taken={};S.sponsors.forEach(function(x){taken[x.slot]=1;});S.sponOffers.forEach(function(o){if(!taken[o.slot]&&(!best[o.slot]||best[o.slot]<o.amt))best[o.slot]=o.amt;});for(var k in best)sp+=best[k]*.8;}
- return Math.round(mc.fan*home*TICKET_BASE[t]*PRICE_LV[S.fin.price].m/10000+sp+DISTRIB[t]+mc.fan*MERCH[t]+S.fin.owner);
+ var at=attEst(mc);
+ return Math.round(at*home*TICKET_BASE[t]*PRICE_LV[S.fin.price].m/10000+sp+DISTRIB[t]+at*MERCH[t]+S.fin.owner);
 }
 
 /* ---------- 資金計画：人件費はクラブの資金（総資産）の中でやりくりする ----------
@@ -2774,7 +2777,7 @@ function seasonProjection(){
 /* 人件費以外にかかる年間コストの見積もり（人件費の上限を計算するときに使う） */
 function fixedCostEst(){
  var mc=myClub(),t=mc.tier,home=LEAGUE_GAMES[t]/2,st=mc.stad&&STAD_TYPES[mc.stad.type];
- var ops=OPS_RATE[t]*(mc.fan*home*TICKET_BASE[t]*PRICE_LV[S.fin.price].m/10000+sponsorIncome()+mc.fan*MERCH[t]);
+ var at=attEst(mc),ops=OPS_RATE[t]*(at*home*TICKET_BASE[t]*PRICE_LV[S.fin.price].m/10000+sponsorIncome()+at*MERCH[t]);
  return STAFF[t]+(mc.coach?mc.coach.sal:STAFF[t]*.4)+MATCH_COST[t]*home*1.35+facUpkeep()+(st?st.rent:0)+HOMETOWN_LV[S.fin.hometown].c*12+ops;
 }
 /* ---------- シーズン開始時の経営タスク ---------- */
@@ -3295,13 +3298,16 @@ function buyPlayer(pid,fee,sal,yrs){
  addNews(pname(p)+'が'+(from?from.short+'から完全移籍で':'フリーで')+'加入'+(fee?'（移籍金'+money(fee)+'）':''),1);
  return {ok:true,msg:pname(p)+'の獲得が決まりました'};
 }
+/* レンタルで受け入れるときに、貸し出すクラブが求める年俸の負担割合。
+ * 若手ほど低めでよいが、こちらのカテゴリでは明らかに主力級になる選手は、出し手も「預ける価値」を高く見て負担を多く求める */
+function loanNeed(p){var base=p.age<=21?.5:.7,gap=ovr(p)-myLevel()-3;return Math.min(1,Math.round((base+clamp(gap*.06,0,.5))*10)/10);}
 function loanIn(pid,share){
  var p=S.P[pid],mc=myClub();if(!p||!p.club)return {ok:false,msg:'選手が見つかりません'};
  if(!canTransfer())return {ok:false,msg:'移籍期間外です'};
  if(squadSize()>=40)return {ok:false,msg:'登録上限（40人）に達しています'};
  var from=S.clubs[p.club],mp=Math.max(1,from.mp),usage=(p.st.ap+p.st.cap)/mp;
  if(usage>.45)return {ok:false,msg:from.short+'は主力のため貸し出しに応じません'};
- var need=p.age<=21?.5:.7;
+ var need=loanNeed(p);
  if(!budgetOK(p.sal*share))return {ok:false,msg:budgetMsg()};
  if(foreignBlocked(p))return {ok:false,msg:'JFLでは外国籍選手の登録は5人までです'};
  if(share<need)return {ok:false,msg:from.short+'は年俸負担'+Math.round(need*100)+'%以上を求めています'};
@@ -3740,6 +3746,8 @@ function todos(){
    });
   }
  }
+ /* 満員続きでファン層が収容を大きく上回っているなら、増設で入場料収入が伸びる */
+ var aa=avgAtt(mc);if(aa&&aa>=mc.cap*.95&&mc.fan>=mc.cap*1.2&&!S.builds.some(function(b){return b.k==='stad';}))add('tip','スタジアムが満員続きです','ファン層（約'+Math.round(mc.fan).toLocaleString()+'人）が収容（'+mc.cap.toLocaleString()+'人）を上回り、入場料収入を取りこぼしています。増設か、自治体への改修要望を。',['biz','fac'],'stadfull');
  /* セーブが端末に残らない環境（埋め込み表示のiPhone・Safariなど）では、セーブファイルへの保存を定期的にうながす */
  if(typeof storeState==='function'){var stS=storeState();if(stS!=='ok'){var lf=S.lastFile,gap=S.day-(lf!=null?lf:(UI.sess0!=null?UI.sess0:S.day)),lim=stS==='blocked'?7:14;
   if(gap>=lim)add('must','セーブファイルに保存する',(lf!=null?'前回の保存から'+gap+'日たちました。':'まだ一度も保存していません。')+(stS==='blocked'?'この環境では、ページを開き直すとセーブが消えます。':'アプリやブラウザを閉じるとセーブが消えることがあります。'),['save'],'saveFile');}}
@@ -4145,10 +4153,11 @@ function negOpen(kind,id,ext){
  }
  if(kind==='loan'){
   var mp=Math.max(1,fc.mp),usage=(p.st.ap+p.st.cap)/mp;
-  N.stage='club';N.who=directorName()+'（'+fc.short+'）';N.need=p.age<=21?.5:.7;
+  N.stage='club';N.who=directorName()+'（'+fc.short+'）';N.need=loanNeed(p);
   if(usage>.45){N.done=true;negLine(N,'them',pick([pname(p)+'はうちの主力なので、貸し出しは考えていません。','申し訳ないですが、'+pname(p)+'は今季の構想に入っています。']));return N;}
   negLine(N,'them',pick([pname(p)+'を期限付きで、ということですね。出場機会を与えてもらえるなら前向きに考えます。','うちでは出番が少ないので、試合経験を積ませたいとは思っていました。','武者修行の場としてなら、ありがたい話です。']));
-  negLine(N,'them',pick(['年俸の'+Math.round(N.need*100+10)+'%ほどは、そちらで負担してください。','条件として、年俸の'+Math.round(N.need*100+10)+'%はお願いしたい。']));
+  if(N.need>=.95)negLine(N,'them',pick(['ただ、うちでも将来を期待している選手です。お貸しするなら、年俸は全額そちらで持ってください。','そちらでは主力として使うつもりでしょう。それなら、年俸は全額負担していただきたい。']));
+  else negLine(N,'them',pick(['年俸の'+Math.min(100,Math.round(N.need*100+10))+'%ほどは、そちらで負担してください。','条件として、年俸の'+Math.min(100,Math.round(N.need*100+10))+'%はお願いしたい。']));
   N.optT=optTerms(p);
   return N;
  }
